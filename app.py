@@ -85,7 +85,7 @@ st.markdown("""
     
     div.stButton > button { min-height: 45px; border-radius: 8px; font-weight: bold; }
 
-    /* ESTILOS RANKING (VENTANA) */
+    /* ESTILOS RANKING */
     .ranking-style > button {
         background-color: #0071DC !important; color: white !important;
         font-size: 1rem !important; text-transform: uppercase;
@@ -213,14 +213,14 @@ if st.session_state.active_retailer == 'SORIANA':
         st.dataframe(disp.style.apply(sty, axis=1).format(precision=2), use_container_width=True, hide_index=True)
 
 # ==============================================================================
-# VISTA: WALMART
+# VISTA: WALMART (REESCRITA)
 # ==============================================================================
 elif st.session_state.active_retailer == 'WALMART':
     st.markdown(f"<div class='active-title' style='background-color: #0071DC; color: #FFC220;'>WALMART</div>", unsafe_allow_html=True)
 
+    # Variables de estado
     if 'w_neg' not in st.session_state: st.session_state.w_neg = False
     if 'w_4w' not in st.session_state: st.session_state.w_4w = False
-    
     if 'w_rank_tiendas' not in st.session_state: st.session_state.w_rank_tiendas = False
     if 'w_rank_pastas' not in st.session_state: st.session_state.w_rank_pastas = False
     if 'w_rank_olivas' not in st.session_state: st.session_state.w_rank_olivas = False
@@ -235,50 +235,37 @@ elif st.session_state.active_retailer == 'WALMART':
     
     def tog_rank_tiendas():
         st.session_state.w_rank_tiendas = not st.session_state.w_rank_tiendas
-        if st.session_state.w_rank_tiendas: 
-            st.session_state.w_nutri_top10 = False
-            st.session_state.w_rank_pastas = False
-            st.session_state.w_rank_olivas = False
-            
+        if st.session_state.w_rank_tiendas: st.session_state.w_nutri_top10 = False; st.session_state.w_rank_pastas = False; st.session_state.w_rank_olivas = False
     def tog_rank_pastas():
         st.session_state.w_rank_pastas = not st.session_state.w_rank_pastas
-        if st.session_state.w_rank_pastas:
-            st.session_state.w_rank_tiendas = False
-            st.session_state.w_nutri_top10 = False
-            st.session_state.w_rank_olivas = False
-
+        if st.session_state.w_rank_pastas: st.session_state.w_rank_tiendas = False; st.session_state.w_nutri_top10 = False; st.session_state.w_rank_olivas = False
     def tog_rank_olivas():
         st.session_state.w_rank_olivas = not st.session_state.w_rank_olivas
-        if st.session_state.w_rank_olivas:
-            st.session_state.w_rank_tiendas = False
-            st.session_state.w_nutri_top10 = False
-            st.session_state.w_rank_pastas = False
-
+        if st.session_state.w_rank_olivas: st.session_state.w_rank_tiendas = False; st.session_state.w_nutri_top10 = False; st.session_state.w_rank_pastas = False
     def tog_nutri_top10():
         st.session_state.w_nutri_top10 = not st.session_state.w_nutri_top10
-        if st.session_state.w_nutri_top10: 
-            st.session_state.w_rank_tiendas = False
-            st.session_state.w_rank_pastas = False
-            st.session_state.w_rank_olivas = False
+        if st.session_state.w_nutri_top10: st.session_state.w_rank_tiendas = False; st.session_state.w_rank_pastas = False; st.session_state.w_rank_olivas = False
 
     @st.cache_data(**CACHE_CONFIG)
     def load_wal(path):
         try:
             df = pd.read_excel(path)
             if df.shape[1] < 97: return None
-            # Limpiezas BV..BY (4 Semanas)
-            for c in df.iloc[:, 73:77].columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            # Limpieza AQ (Negativos)
+            df = df.drop_duplicates()
+
+            # Limpieza BV..BY (indices 73,74,75,76)
+            for c in df.iloc[:, [73,74,75,76]].columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            
+            # CALCULO PROM PZS MENSUAL (Promedio de BV,BW,BX,BY)
+            df['PROM_PZS_MENSUAL'] = df.iloc[:, [73,74,75,76]].mean(axis=1)
+
+            # Limpieza AQ(42)
             c42 = df.columns[42]
             df[c42] = pd.to_numeric(df[c42], errors='coerce').fillna(0)
             
-            # --- CORRECCIÓN CLAVE: LEER CS DIRECTO ---
-            # La columna CS es el índice 96 (0-indexed).
+            # SO_$ desde Col CS (96)
             c_cs = df.columns[96]
-            df[c_cs] = pd.to_numeric(df[c_cs], errors='coerce').fillna(0)
-            
-            # Usamos una columna auxiliar normalizada
-            df['SO_$'] = df[c_cs]
+            df['SO_$'] = pd.to_numeric(df[c_cs], errors='coerce').fillna(0)
             
             return df
         except: return None
@@ -289,33 +276,53 @@ elif st.session_state.active_retailer == 'WALMART':
         cq = df_w.columns[16] # Formato
         df_w = df_w[~df_w[cq].isin(['BAE','MB'])]
 
+        # --- FILTROS EN PANTALLA ---
+        # 1. Filtro Estado (Col H - Index 7)
+        c_state = df_w.columns[7]
+        unique_states = sorted(df_w[c_state].astype(str).unique())
+        
         c1, c2 = st.columns(2)
         with c1:
-            fil_t = st.multiselect("Tienda", sorted(df_w[df_w.columns[15]].astype(str).unique()))
-            fil_f = st.multiselect("Formato", sorted(df_w[cq].astype(str).unique()))
+            sel_state = st.multiselect("Estado", unique_states)
+            
+            # LOGICA CASCADA: Si hay estado, filtrar tiendas. Si no, todas.
+            c_store = df_w.columns[15] # Col P
+            if sel_state:
+                subset_stores = df_w[df_w[c_state].isin(sel_state)]
+                unique_stores = sorted(subset_stores[c_store].astype(str).unique())
+            else:
+                unique_stores = sorted(df_w[c_store].astype(str).unique())
+            
+            sel_store = st.multiselect("Tienda", unique_stores)
+
         with c2:
-            fil_c = st.multiselect("Categoría", sorted(df_w[df_w.columns[5]].astype(str).unique()))
-            fil_e = st.multiselect("Estado", sorted(df_w[df_w.columns[7]].astype(str).unique()))
+            # Formato (Col Q - 16)
+            sel_fmt = st.multiselect("Formato", sorted(df_w[cq].astype(str).unique()))
+            # Categoria (Col F - 5)
+            c_cat = df_w.columns[5]
+            sel_cat = st.multiselect("Categoría", sorted(df_w[c_cat].astype(str).unique()))
 
         st.write("")
         b1, b2 = st.columns(2)
         with b1: st.button("📉 NEGATIVOS" if not st.session_state.w_neg else "📉 QUITAR NEG", on_click=tog_w_neg, use_container_width=True, type="primary")
         with b2: st.button("🔴 SIN VTA 4SEM" if not st.session_state.w_4w else "🔴 QUITAR 4SEM", on_click=tog_w_4w, use_container_width=True, type="primary")
 
+        # --- APLICACIÓN FILTROS ---
         dff = df_w.copy()
-        if fil_t: dff = dff[dff[df_w.columns[15]].astype(str).isin(fil_t)]
-        if fil_f: dff = dff[dff[cq].astype(str).isin(fil_f)]
-        if fil_c: dff = dff[dff[df_w.columns[5]].astype(str).isin(fil_c)]
-        if fil_e: dff = dff[dff[df_w.columns[7]].astype(str).isin(fil_e)]
+        if sel_state: dff = dff[dff[c_state].astype(str).isin(sel_state)]
+        if sel_store: dff = dff[dff[c_store].astype(str).isin(sel_store)]
+        if sel_fmt: dff = dff[dff[cq].astype(str).isin(sel_fmt)]
+        if sel_cat: dff = dff[dff[c_cat].astype(str).isin(sel_cat)]
 
         if st.session_state.w_neg: dff = dff[dff[df_w.columns[42]] < 0]; st.warning("VISTA: NEGATIVOS")
         
+        # Logica 4 semanas (BV,BW,BX,BY == 0)
         cbv, cbw, cbx, cby = df_w.columns[73], df_w.columns[74], df_w.columns[75], df_w.columns[76]
         if st.session_state.w_4w:
             dff = dff[(dff[cbv]==0)&(dff[cbw]==0)&(dff[cbx]==0)&(dff[cby]==0)]
             st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
-        # --- KPI TOTAL SELL OUT ---
+        # --- KPI ---
         total_kpi = dff['SO_$'].sum() 
         st.markdown(f"""
             <div style="text-align: center; padding: 10px; background-color: #f9f9f9; border-radius: 10px; margin-bottom: 20px; border: 1px solid #ddd;">
@@ -324,33 +331,37 @@ elif st.session_state.active_retailer == 'WALMART':
             </div>
         """, unsafe_allow_html=True)
 
-        cols = [df_w.columns[0], df_w.columns[4], df_w.columns[15], df_w.columns[33], df_w.columns[42], 'SO_$', df_w.columns[38]]
-        disp = dff[cols].copy()
-        disp.columns = ['COD', 'DESC', 'TIENDA', 'DDI', 'EXIST', 'SO $', 'PROM PZAS']
+        # --- TABLA DE RESULTADOS ---
+        # Col A(0), E(4), P(15), AQ(42), CS(96), PROM_PZS_MENSUAL(Calc)
+        cols_table = [
+            df_w.columns[0], # Codigo
+            df_w.columns[4], # Desc
+            df_w.columns[15], # Tienda
+            df_w.columns[42], # Existencia
+            'SO_$',           # Sell Out
+            'PROM_PZS_MENSUAL' # Prom Pzs
+        ]
+        disp = dff[cols_table].copy()
+        disp.columns = ['CODIGO', 'DESCRIPCION', 'TIENDA', 'EXISTENCIA', 'SELL OUT', 'PROM PZS MENSUAL']
 
         msg = [f"*WALMART ({len(disp)})*"]
-        for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESC']}\n📊 Ext:{r['EXIST']} | SO$:{r['SO $']:,.2f}\n-")
+        for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESCRIPCION']}\n📊 Ext:{r['EXISTENCIA']} | SO$:{r['SELL OUT']:,.2f}\n-")
         if len(disp)>40: msg.append("...")
         url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
         st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:fff;padding:12px;text-align:center;font-weight:bold;margin:10px 0;">📱 ENVIAR POR WHATS</div></a>', unsafe_allow_html=True)
 
         def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.w_4w else ['']*len(r)
-        st.dataframe(disp.style.apply(sty, axis=1).format({'SO $':"${:,.2f}", 'PROM PZAS':"{:,.2f}"}), use_container_width=True, hide_index=True)
+        st.dataframe(disp.style.apply(sty, axis=1).format({'SELL OUT':"${:,.2f}", 'PROM PZS MENSUAL':"{:,.2f}"}), use_container_width=True, hide_index=True)
 
-        # ----------------------------------------------------------------------
-        #  🏆 SEGUNDO MÓDULO: RANKING DE VENTAS (VENTANA 2x2)
-        # ----------------------------------------------------------------------
+        # --- SEGUNDO MÓDULO: RANKING ---
         st.divider()
         st.markdown("<h3 style='text-align: center;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
 
         c_mod1, c_mod2 = st.columns(2)
         with c_mod1:
-            col_h_idx = 7 
-            unique_states = sorted(df_w.iloc[:, col_h_idx].astype(str).unique())
             sel_state_rank = st.multiselect("Filtrar Estado (Ranking)", unique_states)
         with c_mod2:
-            col_q_idx = 16 
-            unique_formats = sorted(df_w.iloc[:, col_q_idx].astype(str).unique())
+            unique_formats = sorted(df_w.iloc[:, 16].astype(str).unique())
             sel_fmt_rank = st.multiselect("Filtrar Formato (Ranking)", unique_formats)
 
         r1_c1, r1_c2 = st.columns(2, gap="small")
@@ -373,22 +384,18 @@ elif st.session_state.active_retailer == 'WALMART':
             if st.button("🏆 NUTRIOLI", use_container_width=True, key="btn_nutrioli"): tog_nutri_top10()
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # LOGICA RANKINGS
         df_rank_base = df_w.copy()
+        col_h_idx = 7; col_q_idx = 16
         if sel_state_rank: df_rank_base = df_rank_base[df_rank_base.iloc[:, col_h_idx].astype(str).isin(sel_state_rank)]
         if sel_fmt_rank: df_rank_base = df_rank_base[df_rank_base.iloc[:, col_q_idx].astype(str).isin(sel_fmt_rank)]
 
-        # --- RANKING GENERAL ---
         if st.session_state.w_rank_tiendas:
-            # Agrupar por Tienda(P=15) y Sumar SO_$(Calc)
             rank_gen = df_rank_base.groupby(df_rank_base.iloc[:, 15])['SO_$'].sum().reset_index()
             rank_gen.columns = ['TIENDA', 'VENTA TOTAL ($)']
             rank_gen = rank_gen.sort_values(by='VENTA TOTAL ($)', ascending=False)
             st.dataframe(rank_gen.style.format({'VENTA TOTAL ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
-        # --- RANKING PASTAS ---
         if st.session_state.w_rank_pastas:
-            # Filtro por Categoría(F=5)
             df_pastas = df_rank_base[df_rank_base.iloc[:, 5].astype(str).str.contains("PASTAS", case=False, na=False)]
             if df_pastas.empty: st.warning("⚠️ Sin ventas de PASTAS.")
             else:
@@ -397,14 +404,12 @@ elif st.session_state.active_retailer == 'WALMART':
                 rank_pst = rank_pst.sort_values(by='VENTA PASTAS ($)', ascending=False)
                 st.dataframe(rank_pst.style.format({'VENTA PASTAS ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
-        # --- RANKING OLIVAS ---
         if st.session_state.w_rank_olivas:
             target_olivas = [
                 "OLI SPRAY ACEITE DE OLIVA 145ML", "OLI COCINA 500ML", "OLI COCINA 250ML",
                 "OLI DE NUT EV 500ML", "OLI COCINA 750ML", "OLI DE NUT EV 250ML",
                 "OLI DE NUT EV 750ML", "OLI VINAGRE BALSAMICO 250ML"
             ]
-            # Filtro por Desc(E=4)
             df_olivas = df_rank_base[df_rank_base.iloc[:, 4].isin(target_olivas)]
             if df_olivas.empty: st.warning("⚠️ Sin ventas de OLIVAS.")
             else:
@@ -413,7 +418,6 @@ elif st.session_state.active_retailer == 'WALMART':
                 rank_oli = rank_oli.sort_values(by='VENTA OLIVAS ($)', ascending=False)
                 st.dataframe(rank_oli.style.format({'VENTA OLIVAS ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
-        # --- TOP 10 NUTRIOLI ---
         if st.session_state.w_nutri_top10:
             df_nutri = df_rank_base[df_rank_base.iloc[:, 4].astype(str).str.contains("ACEITE NUTRIOLI 946M", case=False, na=False)]
             if df_nutri.empty: st.warning("⚠️ Sin ventas de ACEITE NUTRIOLI 946M.")
