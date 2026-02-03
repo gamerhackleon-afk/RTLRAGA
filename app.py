@@ -22,7 +22,9 @@ except:
     )
 
 # --- OPTIMIZACIÓN DE MEMORIA (CACHE) ---
-CACHE_CONFIG = {'ttl': 600, 'max_entries': 1, 'show_spinner': False}
+# ttl=None: La memoria NO expira mientras la app esté abierta.
+# max_entries=5: Guarda hasta 5 archivos en memoria (suficiente para Soriana, Wal, Che, Fre).
+CACHE_CONFIG = {'ttl': None, 'max_entries': 5, 'show_spinner': False}
 
 # --- URLS (RAW) ---
 URLS_DB = {
@@ -31,10 +33,11 @@ URLS_DB = {
     "CHEDRAUI": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/CHEDRAUI.xlsx"
 }
 
-# --- DETECCIÓN DE RED ---
+# --- DETECCIÓN DE RED AL INICIO ---
 if 'is_online' not in st.session_state:
     try:
-        requests.get("https://github.com", timeout=2)
+        # Timeout rápido para no bloquear la app
+        requests.get("https://github.com", timeout=1)
         st.session_state.is_online = True
     except:
         st.session_state.is_online = False
@@ -163,21 +166,33 @@ with col4: st.button("FRESKO", on_click=set_retailer, args=("FRESKO",), use_cont
 
 st.divider()
 
-# --- FUNCIÓN DE CARGA MAESTRA ---
+# --- FUNCIÓN DE CARGA MAESTRA (CLAVE PARA OFFLINE) ---
 def get_data(key, uploader_key, func_load):
+    """
+    Intenta cargar datos. Si ya están en caché (RAM), los devuelve sin usar internet.
+    Si no están en caché, intenta descargar.
+    """
     df = None
+    
+    # 1. Intentamos cargar usando la función cacheada.
+    # Si ya se descargó antes, Streamlit NO ejecutará el código de red y devolverá el dato de RAM.
     if st.session_state.is_online and key in URLS_DB:
         try:
-            with st.spinner(f"☁️ Descargando {key}..."):
+            # Spinner solo visible si realmente está descargando
+            with st.spinner(f"☁️ Sincronizando {key}..."):
                 df = func_load(URLS_DB[key]) 
-                st.success(f"✅ {key} cargado de la nube.")
         except:
-            st.warning("⚠️ Falló descarga. Usa modo manual.")
+            # Si falla la descarga, no pasa nada, df sigue siendo None
+            pass
     
+    # 2. Si no tenemos datos (porque es la primera vez y no hay red, o falló la descarga)
     if df is None:
-        if not st.session_state.is_online: st.info("📡 Modo Offline.")
+        if not st.session_state.is_online: 
+            st.info("📡 Estás Offline. Si ya cargaste los datos antes, intenta recargar la página. Si no, usa carga manual.")
+        
         f = st.file_uploader(f"📂 Cargar Excel {key}", type=["xlsx"], key=uploader_key)
         if f: df = func_load(f)
+    
     return df
 
 # ==============================================================================
@@ -189,6 +204,7 @@ if st.session_state.active_retailer == 'SORIANA':
     if 's_rojo' not in st.session_state: st.session_state.s_rojo = False
     def tog_s_rojo(): st.session_state.s_rojo = not st.session_state.s_rojo
 
+    # TTL=None -> PERSISTENCIA TOTAL EN RAM
     @st.cache_data(**CACHE_CONFIG)
     def load_sor(path):
         try:
@@ -203,7 +219,7 @@ if st.session_state.active_retailer == 'SORIANA':
     df_s = get_data("SORIANA", "up_s", load_sor)
 
     if df_s is not None:
-        # FILTROS VISIBLES (SIN EXPANDER)
+        # FILTROS VISIBLES
         c1, c2 = st.columns(2)
         with c1:
             fil_res = st.multiselect("Resurtible", ["Todos"]+sorted(df_s[df_s.columns[0]].astype(str).unique()), default=None)
@@ -312,10 +328,10 @@ elif st.session_state.active_retailer == 'WALMART':
 
     if df_w is not None:
         cq = df_w.columns[16] # Formato
-        # FILTRO GLOBAL DE FORMATO: ESTO YA EXCLUYE "BAE" PARA TODO LO QUE USE df_w
+        # FILTRO GLOBAL DE FORMATO
         df_w = df_w[~df_w[cq].isin(['BAE','MB'])]
 
-        # --- FILTROS PRINCIPALES (VISIBLES) ---
+        # --- FILTROS PRINCIPALES ---
         c1, c2 = st.columns(2)
         with c1:
             fil_t = st.multiselect("Tienda", sorted(df_w[df_w.columns[15]].astype(str).unique()))
