@@ -22,8 +22,6 @@ except:
     )
 
 # --- OPTIMIZACIÓN DE MEMORIA (CACHE) ---
-# max_entries=1: Solo guarda el último archivo cargado. El anterior se destruye.
-# ttl=600: Solo vive 10 minutos en memoria si no se usa.
 CACHE_CONFIG = {'ttl': 600, 'max_entries': 1, 'show_spinner': False}
 
 # --- URLS (RAW) ---
@@ -53,7 +51,7 @@ st.markdown("""
 <style>
     .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; max-width: 1200px; }
     
-    /* BOTONES TILE (CUADROS) */
+    /* BOTONES TILE (CUADROS PRINCIPALES DE NAVEGACIÓN) */
     div[data-testid="stHorizontalBlock"]:nth-of-type(2) button,
     div[data-testid="stHorizontalBlock"]:nth-of-type(3) button {
         width: 100% !important; height: 110px !important;
@@ -65,32 +63,82 @@ st.markdown("""
     }
     div[data-testid="stHorizontalBlock"] button:active { transform: scale(0.98); filter: brightness(90%); }
 
-    /* COLORES */
-    /* Soriana (Rojo) */
+    /* COLORES TILES NAVEGACIÓN */
+    /* Soriana */
     div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(1) button {
         background: #D32F2F !important; color: #FFF !important;
     }
-    /* Walmart (Azul) */
+    /* Walmart */
     div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(2) button {
         background: #0071DC !important; color: #FFC220 !important;
     }
-    /* Chedraui (Naranja) */
+    /* Chedraui */
     div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(1) button {
         background: #FF6600 !important; color: #FFF !important;
     }
-    /* Fresko (Verde) */
+    /* Fresko */
     div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(2) button {
         background: #CCFF00 !important; color: #FF6600 !important; text-shadow: none !important;
     }
 
-    /* Títulos */
+    /* TITULOS DE SECCION */
     .active-title {
         font-size: 1.8rem; font-weight: 900; margin: 15px 0; padding: 8px;
         color: white; text-align: center; border-radius: 4px;
     }
     
-    /* Botones funcionales (Cargar, WhatsApp, Reset) */
+    /* BOTONES GENERALES */
     div.stButton > button { min-height: 45px; border-radius: 8px; font-weight: bold; }
+
+    /* --- ESTILOS BOTONES MODULO RANKING (VENTANA 2x2) --- */
+    
+    /* 1. Ranking Tiendas (AZUL) */
+    .ranking-style > button {
+        background-color: #0071DC !important;
+        color: white !important;
+        font-size: 1rem !important;
+        text-transform: uppercase;
+        border: 2px solid white !important;
+        height: 80px !important; /* Altura para efecto ventana */
+    }
+
+    /* 2. Ranking Pastas (NARANJA) */
+    .pastas-style > button {
+        background-color: #FF8C00 !important; /* Dark Orange */
+        color: white !important;
+        font-size: 1rem !important;
+        text-transform: uppercase;
+        border: 2px solid white !important;
+        height: 80px !important;
+    }
+    
+    /* 3. Ranking Olivas (OLIVA/DORADO) */
+    .olivas-style > button {
+        background-color: #808000 !important; 
+        color: white !important;
+        font-size: 1rem !important;
+        text-transform: uppercase;
+        border: 2px solid white !important;
+        height: 80px !important;
+    }
+
+    /* 4. Ranking Nutrioli (VERDE) */
+    .nutrioli-style > button {
+        background-color: #28a745 !important;
+        color: #FFC220 !important; /* Letras Amarillas */
+        border: 2px solid #FFC220 !important;
+        font-size: 1rem !important;
+        text-transform: uppercase;
+        height: 80px !important;
+    }
+    
+    /* Efecto Hover Genérico para Rankings */
+    .ranking-style > button:hover, .pastas-style > button:hover, .olivas-style > button:hover, .nutrioli-style > button:hover {
+        filter: brightness(110%);
+        transform: scale(1.02);
+        z-index: 10;
+    }
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -119,22 +167,18 @@ st.divider()
 # --- FUNCIÓN DE CARGA MAESTRA ---
 def get_data(key, uploader_key, func_load):
     df = None
-    # 1. Intento Online
     if st.session_state.is_online and key in URLS_DB:
         try:
             with st.spinner(f"☁️ Descargando {key}..."):
-                # cache_data gestiona la memoria aquí
                 df = func_load(URLS_DB[key]) 
                 st.success(f"✅ {key} cargado de la nube.")
         except:
             st.warning("⚠️ Falló descarga. Usa modo manual.")
     
-    # 2. Intento Manual (Si falló online o es offline)
     if df is None:
         if not st.session_state.is_online: st.info("📡 Modo Offline.")
         f = st.file_uploader(f"📂 Cargar Excel {key}", type=["xlsx"], key=uploader_key)
         if f: df = func_load(f)
-    
     return df
 
 # ==============================================================================
@@ -146,7 +190,6 @@ if st.session_state.active_retailer == 'SORIANA':
     if 's_rojo' not in st.session_state: st.session_state.s_rojo = False
     def tog_s_rojo(): st.session_state.s_rojo = not st.session_state.s_rojo
 
-    # Usamos **CACHE_CONFIG** para limitar la memoria a 1 archivo
     @st.cache_data(**CACHE_CONFIG)
     def load_sor(path):
         try:
@@ -206,8 +249,15 @@ if st.session_state.active_retailer == 'SORIANA':
 elif st.session_state.active_retailer == 'WALMART':
     st.markdown(f"<div class='active-title' style='background-color: #0071DC; color: #FFC220;'>WALMART</div>", unsafe_allow_html=True)
 
+    # Estado botones principales
     if 'w_neg' not in st.session_state: st.session_state.w_neg = False
     if 'w_4w' not in st.session_state: st.session_state.w_4w = False
+    
+    # Estados Módulo Rankings
+    if 'w_rank_tiendas' not in st.session_state: st.session_state.w_rank_tiendas = False
+    if 'w_rank_pastas' not in st.session_state: st.session_state.w_rank_pastas = False
+    if 'w_rank_olivas' not in st.session_state: st.session_state.w_rank_olivas = False
+    if 'w_nutri_top10' not in st.session_state: st.session_state.w_nutri_top10 = False
 
     def tog_w_neg():
         st.session_state.w_neg = not st.session_state.w_neg
@@ -215,13 +265,42 @@ elif st.session_state.active_retailer == 'WALMART':
     def tog_w_4w():
         st.session_state.w_4w = not st.session_state.w_4w
         if st.session_state.w_4w: st.session_state.w_neg = False
+    
+    # Toggles Rankings (Mutuamente exclusivos)
+    def tog_rank_tiendas():
+        st.session_state.w_rank_tiendas = not st.session_state.w_rank_tiendas
+        if st.session_state.w_rank_tiendas: 
+            st.session_state.w_nutri_top10 = False
+            st.session_state.w_rank_pastas = False
+            st.session_state.w_rank_olivas = False
+            
+    def tog_rank_pastas():
+        st.session_state.w_rank_pastas = not st.session_state.w_rank_pastas
+        if st.session_state.w_rank_pastas:
+            st.session_state.w_rank_tiendas = False
+            st.session_state.w_nutri_top10 = False
+            st.session_state.w_rank_olivas = False
 
-    # CACHE ESTRICTO (1 archivo, 10 min)
+    def tog_rank_olivas():
+        st.session_state.w_rank_olivas = not st.session_state.w_rank_olivas
+        if st.session_state.w_rank_olivas:
+            st.session_state.w_rank_tiendas = False
+            st.session_state.w_nutri_top10 = False
+            st.session_state.w_rank_pastas = False
+
+    def tog_nutri_top10():
+        st.session_state.w_nutri_top10 = not st.session_state.w_nutri_top10
+        if st.session_state.w_nutri_top10: 
+            st.session_state.w_rank_tiendas = False
+            st.session_state.w_rank_pastas = False
+            st.session_state.w_rank_olivas = False
+
     @st.cache_data(**CACHE_CONFIG)
     def load_wal(path):
         try:
             df = pd.read_excel(path)
             if df.shape[1] < 97: return None
+            # Limpiezas
             for c in df.iloc[:, 92:97].columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             for c in df.iloc[:, 73:77].columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             c42 = df.columns[42]
@@ -233,10 +312,12 @@ elif st.session_state.active_retailer == 'WALMART':
     df_w = get_data("WALMART", "up_w", load_wal)
 
     if df_w is not None:
-        cq = df_w.columns[16]
+        cq = df_w.columns[16] # Formato
+        # FILTRO GLOBAL DE FORMATO: ESTO YA EXCLUYE "BAE" PARA TODO LO QUE USE df_w
         df_w = df_w[~df_w[cq].isin(['BAE','MB'])]
 
-        with st.expander("🔍 Filtros", expanded=False):
+        # --- FILTROS PRINCIPALES ---
+        with st.expander("🔍 Filtros Generales", expanded=False):
             c1, c2 = st.columns(2)
             with c1:
                 fil_t = st.multiselect("Tienda", sorted(df_w[df_w.columns[15]].astype(str).unique()))
@@ -250,6 +331,7 @@ elif st.session_state.active_retailer == 'WALMART':
         with b1: st.button("📉 NEGATIVOS" if not st.session_state.w_neg else "📉 QUITAR NEG", on_click=tog_w_neg, use_container_width=True, type="primary")
         with b2: st.button("🔴 SIN VTA 4SEM" if not st.session_state.w_4w else "🔴 QUITAR 4SEM", on_click=tog_w_4w, use_container_width=True, type="primary")
 
+        # --- APLICACIÓN FILTROS ---
         dff = df_w.copy()
         if fil_t: dff = dff[dff[df_w.columns[15]].astype(str).isin(fil_t)]
         if fil_f: dff = dff[dff[cq].astype(str).isin(fil_f)]
@@ -263,12 +345,21 @@ elif st.session_state.active_retailer == 'WALMART':
             dff = dff[(dff[cbv]==0)&(dff[cbw]==0)&(dff[cbx]==0)&(dff[cby]==0)]
             st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
-        st.metric("TOTAL SELL OUT $", f"${dff[df_w.columns[96]].sum():,.2f}")
+        # --- METRIC CENTERED GREEN (CUSTOM HTML) ---
+        total_kpi = dff[df_w.columns[96]].sum() # Suma de CS
+        st.markdown(f"""
+            <div style="text-align: center; padding: 10px; background-color: #f9f9f9; border-radius: 10px; margin-bottom: 20px; border: 1px solid #ddd;">
+                <h4 style="color: #555; margin:0; font-size: 1rem;">TOTAL SELL OUT $</h4>
+                <h2 style="color: #28a745; margin:0; font-size: 2.2rem; font-weight: bold;">${total_kpi:,.2f}</h2>
+            </div>
+        """, unsafe_allow_html=True)
 
+        # Tabla Principal
         cols = [df_w.columns[0], df_w.columns[4], df_w.columns[15], df_w.columns[33], df_w.columns[42], 'SO_$', df_w.columns[38]]
         disp = dff[cols].copy()
         disp.columns = ['COD', 'DESC', 'TIENDA', 'DDI', 'EXIST', 'SO $', 'PROM PZAS']
 
+        # WhatsApp Principal
         msg = [f"*WALMART ({len(disp)})*"]
         for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESC']}\n📊 Ext:{r['EXIST']} | SO$:{r['SO $']:,.2f}\n-")
         if len(disp)>40: msg.append("...")
@@ -277,6 +368,122 @@ elif st.session_state.active_retailer == 'WALMART':
 
         def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.w_4w else ['']*len(r)
         st.dataframe(disp.style.apply(sty, axis=1).format({'SO $':"${:,.2f}", 'PROM PZAS':"{:,.2f}"}), use_container_width=True, hide_index=True)
+
+        # ----------------------------------------------------------------------
+        #  🏆 SEGUNDO MÓDULO: RANKING DE VENTAS (VENTANA 2x2)
+        # ----------------------------------------------------------------------
+        st.divider()
+        st.markdown("<h3 style='text-align: center;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
+
+        # Filtros del Módulo (Compartidos)
+        c_mod1, c_mod2 = st.columns(2)
+        with c_mod1:
+            col_h_idx = 7 # Estado
+            unique_states = sorted(df_w.iloc[:, col_h_idx].astype(str).unique())
+            sel_state_rank = st.multiselect("Filtrar Estado (Ranking)", unique_states)
+        with c_mod2:
+            col_q_idx = 16 # Formato
+            unique_formats = sorted(df_w.iloc[:, col_q_idx].astype(str).unique())
+            sel_fmt_rank = st.multiselect("Filtrar Formato (Ranking)", unique_formats)
+
+        # LAYOUT VENTANA 2x2 PARA BOTONES
+        
+        # Fila 1 de Botones Ranking
+        r1_c1, r1_c2 = st.columns(2, gap="small")
+        with r1_c1:
+            # Ranking Tiendas (AZUL)
+            st.markdown('<div class="ranking-style">', unsafe_allow_html=True)
+            if st.button("📊 GENERAL", use_container_width=True, key="btn_rank_tiendas"):
+                tog_rank_tiendas()
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with r1_c2:
+            # Ranking Pastas (NARANJA)
+            st.markdown('<div class="pastas-style">', unsafe_allow_html=True)
+            if st.button("🍝 PASTAS", use_container_width=True, key="btn_rank_pastas"):
+                tog_rank_pastas()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # Fila 2 de Botones Ranking
+        r2_c1, r2_c2 = st.columns(2, gap="small")
+        with r2_c1:
+            # Ranking Olivas (OLIVA)
+            st.markdown('<div class="olivas-style">', unsafe_allow_html=True)
+            if st.button("🫒 OLIVAS", use_container_width=True, key="btn_rank_olivas"):
+                tog_rank_olivas()
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        with r2_c2:
+            # Ranking Nutrioli (VERDE)
+            st.markdown('<div class="nutrioli-style">', unsafe_allow_html=True)
+            if st.button("🏆 NUTRIOLI", use_container_width=True, key="btn_nutrioli"):
+                tog_nutri_top10()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # --- LOGICA VISUALIZACION RANKINGS ---
+        
+        # PREPARAR DATA FILTRADA POR UI LOCAL
+        df_rank_base = df_w.copy()
+        if sel_state_rank:
+            df_rank_base = df_rank_base[df_rank_base.iloc[:, col_h_idx].astype(str).isin(sel_state_rank)]
+        if sel_fmt_rank:
+            df_rank_base = df_rank_base[df_rank_base.iloc[:, col_q_idx].astype(str).isin(sel_fmt_rank)]
+
+        # CASO 1: RANKING GENERAL TIENDAS
+        if st.session_state.w_rank_tiendas:
+            col_store_idx = 15
+            col_sales_idx = 96
+            rank_gen = df_rank_base.groupby(df_rank_base.iloc[:, col_store_idx])[df_rank_base.columns[col_sales_idx]].sum().reset_index()
+            rank_gen.columns = ['TIENDA', 'VENTA TOTAL ($)']
+            rank_gen = rank_gen.sort_values(by='VENTA TOTAL ($)', ascending=False)
+            st.dataframe(rank_gen.style.format({'VENTA TOTAL ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
+        # CASO 2: RANKING PASTAS
+        if st.session_state.w_rank_pastas:
+            df_pastas = df_rank_base[df_rank_base.iloc[:, 5].astype(str).str.contains("PASTAS", case=False, na=False)]
+            if df_pastas.empty:
+                 st.warning("⚠️ No se encontraron ventas para la categoría PASTAS.")
+            else:
+                col_store_idx = 15
+                col_sales_idx = 96
+                rank_pst = df_pastas.groupby(df_pastas.iloc[:, col_store_idx])[df_pastas.columns[col_sales_idx]].sum().reset_index()
+                rank_pst.columns = ['TIENDA', 'VENTA PASTAS ($)']
+                rank_pst = rank_pst.sort_values(by='VENTA PASTAS ($)', ascending=False)
+                st.dataframe(rank_pst.style.format({'VENTA PASTAS ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
+        # CASO 3: RANKING OLIVAS
+        if st.session_state.w_rank_olivas:
+            target_olivas = [
+                "OLI SPRAY ACEITE DE OLIVA 145ML", "OLI COCINA 500ML", "OLI COCINA 250ML",
+                "OLI DE NUT EV 500ML", "OLI COCINA 750ML", "OLI DE NUT EV 250ML",
+                "OLI DE NUT EV 750ML", "OLI VINAGRE BALSAMICO 250ML"
+            ]
+            df_olivas = df_rank_base[df_rank_base.iloc[:, 4].isin(target_olivas)]
+            
+            if df_olivas.empty:
+                st.warning("⚠️ No se encontraron ventas para la lista de Olivas.")
+            else:
+                col_store_idx = 15
+                col_sales_idx = 96
+                rank_oli = df_olivas.groupby(df_olivas.iloc[:, col_store_idx])[df_olivas.columns[col_sales_idx]].sum().reset_index()
+                rank_oli.columns = ['TIENDA', 'VENTA OLIVAS ($)']
+                rank_oli = rank_oli.sort_values(by='VENTA OLIVAS ($)', ascending=False)
+                st.dataframe(rank_oli.style.format({'VENTA OLIVAS ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
+        # CASO 4: TOP 10 NUTRIOLI
+        if st.session_state.w_nutri_top10:
+            df_nutri = df_rank_base[df_rank_base.iloc[:, 4].astype(str).str.contains("ACEITE NUTRIOLI 946M", case=False, na=False)]
+            if df_nutri.empty:
+                st.warning("⚠️ No se encontraron ventas para 'ACEITE NUTRIOLI 946M'.")
+            else:
+                col_store_idx = 15
+                col_sales_idx = 96
+                rank_nut = df_nutri.groupby(df_nutri.iloc[:, col_store_idx])[df_nutri.columns[col_sales_idx]].sum().reset_index()
+                rank_nut.columns = ['TIENDA', 'VENTA NUTRIOLI ($)']
+                rank_nut = rank_nut.sort_values(by='VENTA NUTRIOLI ($)', ascending=False).head(10)
+                st.success("✅ Top 10 Tiendas Nutrioli Generado")
+                st.dataframe(rank_nut.style.format({'VENTA NUTRIOLI ($)': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
 
 # ==============================================================================
 # VISTA: CHEDRAUI
