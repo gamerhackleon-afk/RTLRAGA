@@ -113,7 +113,7 @@ st.markdown(f"""
         padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px;
     }}
     .kpi-title {{ font-size: 0.9rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }}
-    .kpi-value {{ font-size: 2.5rem; color: #28a745; font-weight: 800; margin-top: 5px; }}
+    .kpi-value {{ font-size: 2.5rem; font-weight: 800; margin-top: 5px; }}
 
     .retailer-header {{
         font-size: 1.5rem; font-weight: 800; color: white; padding: 12px 20px;
@@ -251,19 +251,16 @@ if st.session_state.active_retailer == 'SORIANA':
         if st.session_state.s_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             
-            # --- KPI Calculations ---
-            # 1. Nutrioli 850
-            col_desc_s = dff.columns[3] # Col D
-            col_dias_s = dff.columns[21] # Col V
+            # --- KPI Calculations Soriana ---
+            col_desc_s = dff.columns[3]
+            col_dias_s = dff.columns[21]
             
             mask_nut = dff[col_desc_s].astype(str).str.contains("ACEITE DE SOYA NUTRIOLI BOT 850 ML", case=False, na=False)
             val_nut = dff.loc[mask_nut, col_dias_s].mean()
             
-            # 2. Sabrosano
             mask_sab = dff[col_desc_s].astype(str).str.contains("ACEITE COMESTIBLE SABROSANO 850 ML", case=False, na=False)
             val_sab = dff.loc[mask_sab, col_dias_s].mean()
             
-            # 3. Pastas (Grupo)
             target_pastas = [
                 "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR",
                 "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR",
@@ -278,13 +275,11 @@ if st.session_state.active_retailer == 'SORIANA':
             val_sab = val_sab if pd.notna(val_sab) else 0
             val_pas = val_pas if pd.notna(val_pas) else 0
 
-            # Mostrar Cards
             k1, k2, k3 = st.columns(3)
             k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
             k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
             k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>PASTAS (Promedio)</div><div class='kpi-value' style='color:#0071DC;'>{val_pas:,.1f}</div></div>", unsafe_allow_html=True)
 
-            # --- Tabla Detallada ---
             lista_ordenada = [
                 "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML",
                 "ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML",
@@ -457,15 +452,14 @@ elif st.session_state.active_retailer == 'WALMART':
         if st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             
-            # KPI Cards (Usando dff_kpi para que no desaparezcan al filtrar producto)
+            # KPI Cards
             col_ah = df_w.columns[33]
             col_desc = df_w.columns[4]
             
             # SEARCH 1: NUTRIOLI 946M
             val_nutri = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("NUTRIOLI 946M", case=False, na=False)][col_ah].mean()
             
-            # SEARCH 2: GRAN TRADICION (CORREGIDO: Elimina espacios antes de buscar "GRANTRADICION")
-            # Esto encontrará "GRANTRADICION", "GRAN TRADICION", "  GRANTRADICION  "
+            # SEARCH 2: GRAN TRADICION (CORREGIDO)
             mask_gran = dff_kpi[col_desc].astype(str).str.replace(" ", "").str.contains("GRANTRADICION", case=False, na=False)
             val_gran = dff_kpi[mask_gran][col_ah].mean()
             
@@ -476,10 +470,14 @@ elif st.session_state.active_retailer == 'WALMART':
             val_gran = val_gran if pd.notna(val_gran) else 0
             val_sabro = val_sabro if pd.notna(val_sabro) else 0
 
+            # --- APLICACIÓN DE COLORES SOLICITADA ---
             m1, m2, m3 = st.columns(3)
-            m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M</div><div class='kpi-value' style='color:#0071DC;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#0071DC;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
+            # Verde Nutrioli
+            m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M</div><div class='kpi-value' style='color:#28a745;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
+            # Cafe
+            m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
+            # Rosa Mexicano
+            m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
 
             cols_dias = [df_w.columns[15], df_w.columns[0], df_w.columns[4], df_w.columns[33]]
             disp_dias = dff[cols_dias].copy()
@@ -491,7 +489,7 @@ elif st.session_state.active_retailer == 'WALMART':
             st.markdown(f"""
                 <div class='kpi-card'>
                     <div class='kpi-title'>Total Sell Out</div>
-                    <div class='kpi-value'>${total_kpi:,.2f}</div>
+                    <div class='kpi-value' style='color:#28a745;'>${total_kpi:,.2f}</div>
                 </div>
             """, unsafe_allow_html=True)
 
