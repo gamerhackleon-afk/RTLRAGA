@@ -42,7 +42,7 @@ def set_retailer(retailer_name):
     st.session_state.w_rank_olivas = False
     st.session_state.w_nutri_top10 = False
     st.session_state.s_dias_inv = False
-    st.session_state.w_dias_inv = False # Nuevo estado Walmart
+    st.session_state.w_dias_inv = False 
 
 # --- 3. GENERACIÓN DINÁMICA DE CSS ---
 act = st.session_state.active_retailer
@@ -268,27 +268,34 @@ if st.session_state.active_retailer == 'SORIANA':
             df_template = pd.DataFrame({'TARGET_DESC': lista_ordenada})
             df_agg = dff.groupby(dff.iloc[:, 3]).agg({dff.columns[2]: 'first', dff.columns[21]: 'mean'}).reset_index()
             df_agg.columns = ['DESC_ORIGINAL', 'CODIGO', 'DIAS_INV_PROM']
+            
             df_template['TARGET_DESC'] = df_template['TARGET_DESC'].str.strip()
             df_agg['DESC_ORIGINAL'] = df_agg['DESC_ORIGINAL'].astype(str).str.strip()
+            
             df_final = pd.merge(df_template, df_agg, left_on='TARGET_DESC', right_on='DESC_ORIGINAL', how='left')
             df_display = df_final[['CODIGO', 'TARGET_DESC', 'DIAS_INV_PROM']].copy()
             df_display.columns = ["Código", "Descripción", "DIAS INV"]
+            
             fix_mask = df_display['Descripción'] == "ACEITE OLIVA OLI EV SPRAY 145 ML"
             df_display.loc[fix_mask & (df_display['Código'].isna()), 'Código'] = "7501039122624"
+            
             df_display = df_display.fillna({'DIAS INV': 0, 'Código': '-'})
             st.dataframe(df_display.style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
         else:
             dff_view = dff.copy()
             if st.session_state.s_rojo: dff_view = dff_view[dff_view['SIN_VTA']]
             dff_view = dff_view.sort_values('VTA_PROM', ascending=False)
+            
             cols_fin = [df_s.columns[6], df_s.columns[2], df_s.columns[3], df_s.columns[4], 'VTA_PROM', df_s.columns[21], df_s.columns[19]]
             disp = dff_view[cols_fin].copy()
             disp.columns = ['TIENDA', 'COD', 'DESC', 'CAT', 'VTA PROM', 'DIAS', 'CAJAS']
+            
             msg = [f"*SORIANA ({len(disp)})*"]
             for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESC']}\n📊 Inv:{r['CAJAS']} | Dias:{r['DIAS']}\n-")
             if len(disp)>40: msg.append("...")
             url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
             st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:fff;padding:12px;text-align:center;font-weight:bold;border-radius:8px;margin:10px 0;">📱 ENVIAR REPORTE WHATSAPP</div></a>', unsafe_allow_html=True)
+            
             def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.s_rojo else ['']*len(r)
             st.dataframe(disp.style.apply(sty, axis=1).format(precision=2), use_container_width=True, hide_index=True)
 
@@ -304,7 +311,7 @@ elif st.session_state.active_retailer == 'WALMART':
     if 'w_rank_pastas' not in st.session_state: st.session_state.w_rank_pastas = False
     if 'w_rank_olivas' not in st.session_state: st.session_state.w_rank_olivas = False
     if 'w_nutri_top10' not in st.session_state: st.session_state.w_nutri_top10 = False
-    if 'w_dias_inv' not in st.session_state: st.session_state.w_dias_inv = False # NUEVO
+    if 'w_dias_inv' not in st.session_state: st.session_state.w_dias_inv = False 
 
     def reset_ranks():
         st.session_state.w_rank_tiendas = False
@@ -386,7 +393,6 @@ elif st.session_state.active_retailer == 'WALMART':
 
         with c2:
             sel_fmt = st.multiselect("Formato", sorted(df_w[cq].astype(str).unique()))
-            # Nuevo Filtro Producto (Col E - 4)
             c_prod = df_w.columns[4]
             sel_prod = st.multiselect("Producto", sorted(df_w[c_prod].astype(str).unique()))
 
@@ -400,11 +406,14 @@ elif st.session_state.active_retailer == 'WALMART':
             if st.button("📅 DIAS INV", use_container_width=True): tog_w_dias_inv()
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # Aplicar Filtros Globales
-        dff = df_w.copy()
-        if sel_state: dff = dff[dff[c_state].astype(str).isin(sel_state)]
-        if sel_store: dff = dff[dff[c_store].astype(str).isin(sel_store)]
-        if sel_fmt: dff = dff[dff[cq].astype(str).isin(sel_fmt)]
+        # Base Global Filtrada (Menos Producto) para los KPIs
+        dff_kpi = df_w.copy()
+        if sel_state: dff_kpi = dff_kpi[dff_kpi[c_state].astype(str).isin(sel_state)]
+        if sel_store: dff_kpi = dff_kpi[dff_kpi[c_store].astype(str).isin(sel_store)]
+        if sel_fmt: dff_kpi = dff_kpi[dff_kpi[cq].astype(str).isin(sel_fmt)]
+
+        # Base para Tabla (Aplica Todo)
+        dff = dff_kpi.copy()
         if sel_prod: dff = dff[dff[c_prod].astype(str).isin(sel_prod)]
 
         if st.session_state.w_neg: dff = dff[dff[df_w.columns[42]] < 0]; st.warning("VISTA: NEGATIVOS")
@@ -415,42 +424,32 @@ elif st.session_state.active_retailer == 'WALMART':
         # --- VISTA CONDICIONAL: DIAS INV VS NORMAL ---
         
         if st.session_state.w_dias_inv:
-            # 1. SUMMARY METRICS (EL CAMBIO SOLICITADO EN LUGAR DE TOTAL SELL OUT)
             st.subheader("📅 Reporte Días Inventario")
             
-            # Calculo de promedios especificos (Col 33 = AH)
+            # KPI Cards (Usando dff_kpi para que no desaparezcan al filtrar producto)
             col_ah = df_w.columns[33]
             col_desc = df_w.columns[4]
             
-            val_nutri = dff[dff[col_desc].str.contains("ACEITE NUTRIOLI 946M", case=False, na=False)][col_ah].mean()
-            val_gran = dff[dff[col_desc].str.contains("GRAN TRADICION", case=False, na=False)][col_ah].mean()
-            val_sabro = dff[dff[col_desc].str.contains("SABROSANO 850ML", case=False, na=False)][col_ah].mean()
+            val_nutri = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("ACEITE NUTRIOLI 946M", case=False, na=False)][col_ah].mean()
+            # Búsqueda ajustada para GRAN TRADICION
+            val_gran = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("GRAN TRADICION", case=False, na=False)][col_ah].mean()
+            val_sabro = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("SABROSANO 850ML", case=False, na=False)][col_ah].mean()
             
-            # Manejo de NaNs
             val_nutri = val_nutri if pd.notna(val_nutri) else 0
             val_gran = val_gran if pd.notna(val_gran) else 0
             val_sabro = val_sabro if pd.notna(val_sabro) else 0
 
-            # Mostrar tarjetas de métricas
             m1, m2, m3 = st.columns(3)
-            m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M (Prom Días)</div><div class='kpi-value' style='color:#0071DC;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION (Prom Días)</div><div class='kpi-value' style='color:#0071DC;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML (Prom Días)</div><div class='kpi-value' style='color:#0071DC;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
+            m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M</div><div class='kpi-value' style='color:#0071DC;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
+            m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#0071DC;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
+            m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
 
-            # 2. TABLA DETALLADA (TIENDA, CODIGO, DESC, DIAS INV)
-            cols_dias = [
-                df_w.columns[15], # Tienda
-                df_w.columns[0],  # Codigo
-                df_w.columns[4],  # Descripcion
-                df_w.columns[33]  # Dias Inv
-            ]
+            cols_dias = [df_w.columns[15], df_w.columns[0], df_w.columns[4], df_w.columns[33]]
             disp_dias = dff[cols_dias].copy()
             disp_dias.columns = ['TIENDA', 'CODIGO', 'DESCRIPCION', 'DIAS INVENTARIO']
-            
             st.dataframe(disp_dias.style.format({'DIAS INVENTARIO': "{:,.1f}"}), use_container_width=True, hide_index=True)
 
         else:
-            # --- VISTA NORMAL SELL OUT ---
             total_kpi = dff['SO_$'].sum() 
             st.markdown(f"""
                 <div class='kpi-card'>
