@@ -275,27 +275,22 @@ if st.session_state.active_retailer == 'SORIANA':
             df_final = pd.merge(df_template, df_agg, left_on='TARGET_DESC', right_on='DESC_ORIGINAL', how='left')
             df_display = df_final[['CODIGO', 'TARGET_DESC', 'DIAS_INV_PROM']].copy()
             df_display.columns = ["Código", "Descripción", "DIAS INV"]
-            
             fix_mask = df_display['Descripción'] == "ACEITE OLIVA OLI EV SPRAY 145 ML"
             df_display.loc[fix_mask & (df_display['Código'].isna()), 'Código'] = "7501039122624"
-            
             df_display = df_display.fillna({'DIAS INV': 0, 'Código': '-'})
             st.dataframe(df_display.style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
         else:
             dff_view = dff.copy()
             if st.session_state.s_rojo: dff_view = dff_view[dff_view['SIN_VTA']]
             dff_view = dff_view.sort_values('VTA_PROM', ascending=False)
-            
             cols_fin = [df_s.columns[6], df_s.columns[2], df_s.columns[3], df_s.columns[4], 'VTA_PROM', df_s.columns[21], df_s.columns[19]]
             disp = dff_view[cols_fin].copy()
             disp.columns = ['TIENDA', 'COD', 'DESC', 'CAT', 'VTA PROM', 'DIAS', 'CAJAS']
-            
             msg = [f"*SORIANA ({len(disp)})*"]
             for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESC']}\n📊 Inv:{r['CAJAS']} | Dias:{r['DIAS']}\n-")
             if len(disp)>40: msg.append("...")
             url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
             st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:fff;padding:12px;text-align:center;font-weight:bold;border-radius:8px;margin:10px 0;">📱 ENVIAR REPORTE WHATSAPP</div></a>', unsafe_allow_html=True)
-            
             def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.s_rojo else ['']*len(r)
             st.dataframe(disp.style.apply(sty, axis=1).format(precision=2), use_container_width=True, hide_index=True)
 
@@ -393,6 +388,7 @@ elif st.session_state.active_retailer == 'WALMART':
 
         with c2:
             sel_fmt = st.multiselect("Formato", sorted(df_w[cq].astype(str).unique()))
+            # Nuevo Filtro Producto (Col E - 4)
             c_prod = df_w.columns[4]
             sel_prod = st.multiselect("Producto", sorted(df_w[c_prod].astype(str).unique()))
 
@@ -430,9 +426,15 @@ elif st.session_state.active_retailer == 'WALMART':
             col_ah = df_w.columns[33]
             col_desc = df_w.columns[4]
             
-            val_nutri = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("ACEITE NUTRIOLI 946M", case=False, na=False)][col_ah].mean()
-            # Búsqueda ajustada para GRAN TRADICION
-            val_gran = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("GRAN TRADICION", case=False, na=False)][col_ah].mean()
+            # SEARCH 1: NUTRIOLI 946M
+            val_nutri = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("NUTRIOLI 946M", case=False, na=False)][col_ah].mean()
+            
+            # SEARCH 2: GRAN TRADICION (CORREGIDO: Elimina espacios antes de buscar "GRANTRADICION")
+            # Esto encontrará "GRANTRADICION", "GRAN TRADICION", "  GRANTRADICION  "
+            mask_gran = dff_kpi[col_desc].astype(str).str.replace(" ", "").str.contains("GRANTRADICION", case=False, na=False)
+            val_gran = dff_kpi[mask_gran][col_ah].mean()
+            
+            # SEARCH 3: SABROSANO 850ML
             val_sabro = dff_kpi[dff_kpi[col_desc].astype(str).str.contains("SABROSANO 850ML", case=False, na=False)][col_ah].mean()
             
             val_nutri = val_nutri if pd.notna(val_nutri) else 0
