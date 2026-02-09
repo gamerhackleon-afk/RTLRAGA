@@ -23,7 +23,7 @@ URLS_DB = {
     "CHEDRAUI": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/CHEDRAUI.xlsx"
 }
 
-# Inicialización de variables de sesión
+# Inicialización
 if 'is_online' not in st.session_state:
     try:
         requests.get("https://github.com", timeout=1)
@@ -34,7 +34,7 @@ if 'is_online' not in st.session_state:
 if 'active_retailer' not in st.session_state:
     st.session_state.active_retailer = 'WALMART'
 
-# Funciones de control de estado
+# Funciones de control
 def set_retailer(retailer_name):
     st.session_state.active_retailer = retailer_name
     st.session_state.w_rank_tiendas = False
@@ -42,84 +42,101 @@ def set_retailer(retailer_name):
     st.session_state.w_rank_olivas = False
     st.session_state.w_nutri_top10 = False
     st.session_state.s_dias_inv = False
+    st.session_state.w_dias_inv = False # Nuevo estado Walmart
 
-# --- 3. ESTILOS CSS PROFESIONALES ---
-st.markdown("""
+# --- 3. GENERACIÓN DINÁMICA DE CSS ---
+act = st.session_state.active_retailer
+style_on = "opacity: 1 !important; border: 3px solid #ffffff !important; transform: scale(1.02) !important; box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important; z-index: 10 !important;"
+style_off = "opacity: 0.5 !important; transform: scale(0.98) !important; filter: grayscale(60%) !important; border: 1px solid transparent !important;"
+
+css_sor = style_on if act == 'SORIANA' else style_off
+css_wal = style_on if act == 'WALMART' else style_off
+css_che = style_on if act == 'CHEDRAUI' else style_off
+css_fre = style_on if act == 'FRESKO' else style_off
+
+st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
     
-    html, body, [class*="css"] {
+    html, body, [class*="css"] {{
         font-family: 'Inter', sans-serif;
-    }
+    }}
 
-    .block-container {
+    .block-container {{
         padding-top: 1.5rem !important;
         padding-bottom: 3rem !important;
         max-width: 1200px;
-    }
+    }}
 
-    /* TILES NAVEGACIÓN */
-    div[data-testid="stHorizontalBlock"] button {
-        border: none !important;
+    /* BOTONES TILE */
+    div[data-testid="stHorizontalBlock"] button {{
         border-radius: 12px !important;
         height: 90px !important;
         font-size: 1.1rem !important;
-        font-weight: 700 !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
-        transition: all 0.2s ease-in-out !important;
+        font-weight: 800 !important;
         text-transform: uppercase;
         display: flex; align-items: center; justify-content: center;
-    }
+        transition: all 0.2s ease-in-out !important;
+    }}
 
-    div[data-testid="stHorizontalBlock"] button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0,0,0,0.15) !important;
-        z-index: 10;
-    }
+    /* 1. SORIANA (ROJO) */
+    div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(1) button {{
+        background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; 
+        color: white !important;
+        {css_sor}
+    }}
 
-    div[data-testid="stHorizontalBlock"] button:active { transform: scale(0.98); }
+    /* 2. WALMART (AZUL) */
+    div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(2) button {{
+        background: linear-gradient(135deg, #0071DC, #005BB5) !important; 
+        color: white !important;
+        {css_wal}
+    }}
 
-    /* COLORES MARCA */
-    div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(1) button {
-        background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important;
-    }
-    div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(2) button {
-        background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important;
-    }
-    div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(1) button {
-        background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important;
-    }
-    div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(2) button {
-        background: linear-gradient(135deg, #CCFF00, #AACC00) !important; color: #444 !important; text-shadow: none !important;
-    }
+    /* 3. CHEDRAUI (NARANJA) */
+    div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(1) button {{
+        background: linear-gradient(135deg, #FF6600, #E65100) !important; 
+        color: white !important;
+        {css_che}
+    }}
 
-    /* KPI CARD */
-    .kpi-card {
+    /* 4. FRESKO (VERDE/GRIS) */
+    div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(2) button {{
+        background: linear-gradient(135deg, #CCFF00, #AACC00) !important; 
+        color: #444 !important; text-shadow: none !important;
+        {css_fre}
+    }}
+
+    /* ESTILOS DE APP */
+    .kpi-card {{
         background-color: white; border: 1px solid #e0e0e0; border-radius: 12px;
         padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px;
-    }
-    .kpi-title { font-size: 0.9rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
-    .kpi-value { font-size: 2.5rem; color: #28a745; font-weight: 800; margin-top: 5px; }
+    }}
+    .kpi-title {{ font-size: 0.9rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }}
+    .kpi-value {{ font-size: 2.5rem; color: #28a745; font-weight: 800; margin-top: 5px; }}
 
-    /* RETAILER HEADER */
-    .retailer-header {
+    .retailer-header {{
         font-size: 1.5rem; font-weight: 800; color: white; padding: 12px 20px;
         border-radius: 8px; margin-top: 20px; margin-bottom: 15px; text-align: center;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
+    }}
 
-    /* BOTONES ACCIÓN */
-    div.stButton > button {
-        border-radius: 8px !important; font-weight: 600 !important;
-        min-height: 45px !important; border: 1px solid rgba(0,0,0,0.1) !important;
-    }
+    div.stButton > button {{ min-height: 50px !important; border-radius: 8px; font-weight: 600; }}
 
-    /* RANKING BUTTONS COLORS */
-    .btn-ranking-blue > button { background-color: #0071DC !important; color: white !important; }
-    .btn-ranking-orange > button { background-color: #FF8C00 !important; color: white !important; }
-    .btn-ranking-olive > button { background-color: #808000 !important; color: white !important; }
-    .btn-ranking-green > button { background-color: #28a745 !important; color: white !important; }
+    /* RANKING STYLES */
+    .ranking-style > button {{ background-color: #0071DC !important; color: white !important; border: 2px solid white !important; height: 80px !important; font-size: 1rem !important; text-transform: uppercase; }}
+    .pastas-style > button {{ background-color: #FF8C00 !important; color: white !important; border: 2px solid white !important; height: 80px !important; font-size: 1rem !important; text-transform: uppercase; }}
+    .olivas-style > button {{ background-color: #808000 !important; color: white !important; border: 2px solid white !important; height: 80px !important; font-size: 1rem !important; text-transform: uppercase; }}
+    .nutrioli-style > button {{ background-color: #28a745 !important; color: #FFC220 !important; border: 2px solid #FFC220 !important; height: 80px !important; font-size: 1rem !important; text-transform: uppercase; }}
     
+    .dias-inv-style > button {{
+        background-color: #28a745 !important; color: white !important; border: 1px solid rgba(0,0,0,0.1) !important;
+        font-size: 1rem !important; text-transform: uppercase; min-height: 50px !important; margin-top: 0px !important;
+    }}
+    
+    .ranking-style > button:hover, .pastas-style > button:hover, .olivas-style > button:hover, .nutrioli-style > button:hover, .dias-inv-style > button:hover {{
+        filter: brightness(110%); transform: scale(1.02); z-index: 10;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -141,16 +158,16 @@ st.markdown(f"<div style='text-align:right; font-size:0.75rem; color:{status_col
 
 # --- 5. NAVEGACIÓN ---
 col1, col2 = st.columns(2, gap="medium")
-with col1: st.button("🟦 SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True)
-with col2: st.button("🟦 WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True)
+with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True)
+with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True)
 
 col3, col4 = st.columns(2, gap="medium")
-with col3: st.button("🟧 CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True)
-with col4: st.button("🟩 FRESKO", on_click=set_retailer, args=("FRESKO",), use_container_width=True)
+with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True)
+with col4: st.button("FRESKO", on_click=set_retailer, args=("FRESKO",), use_container_width=True)
 
 st.markdown("<hr style='margin: 20px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
-# --- 6. DATA LOADER ---
+# --- 6. CARGA MAESTRA ---
 def get_data(key, uploader_key, func_load):
     df = None
     if st.session_state.is_online and key in URLS_DB:
@@ -226,12 +243,13 @@ if st.session_state.active_retailer == 'SORIANA':
         with b1:
             st.button("🔴 APAGAR SIN VENTA" if st.session_state.s_rojo else "🔴 INV SIN VENTA", on_click=tog_s_rojo, use_container_width=True, type="primary")
         with b2:
-            st.markdown('<div class="btn-ranking-green">', unsafe_allow_html=True)
+            cls_dias = "rank-green-on" if st.session_state.s_dias_inv else "dias-inv-style"
+            st.markdown(f'<div class="{cls_dias}">', unsafe_allow_html=True)
             if st.button("📅 DIAS INV", use_container_width=True): tog_s_dias_inv()
             st.markdown('</div>', unsafe_allow_html=True)
 
         if st.session_state.s_dias_inv:
-            st.markdown("#### 📅 Reporte Días Inventario")
+            st.subheader("📅 Reporte Días Inventario")
             lista_ordenada = [
                 "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML",
                 "ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML",
@@ -250,34 +268,27 @@ if st.session_state.active_retailer == 'SORIANA':
             df_template = pd.DataFrame({'TARGET_DESC': lista_ordenada})
             df_agg = dff.groupby(dff.iloc[:, 3]).agg({dff.columns[2]: 'first', dff.columns[21]: 'mean'}).reset_index()
             df_agg.columns = ['DESC_ORIGINAL', 'CODIGO', 'DIAS_INV_PROM']
-            
             df_template['TARGET_DESC'] = df_template['TARGET_DESC'].str.strip()
             df_agg['DESC_ORIGINAL'] = df_agg['DESC_ORIGINAL'].astype(str).str.strip()
-            
             df_final = pd.merge(df_template, df_agg, left_on='TARGET_DESC', right_on='DESC_ORIGINAL', how='left')
             df_display = df_final[['CODIGO', 'TARGET_DESC', 'DIAS_INV_PROM']].copy()
             df_display.columns = ["Código", "Descripción", "DIAS INV"]
-            
             fix_mask = df_display['Descripción'] == "ACEITE OLIVA OLI EV SPRAY 145 ML"
             df_display.loc[fix_mask & (df_display['Código'].isna()), 'Código'] = "7501039122624"
-            
             df_display = df_display.fillna({'DIAS INV': 0, 'Código': '-'})
             st.dataframe(df_display.style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
         else:
             dff_view = dff.copy()
             if st.session_state.s_rojo: dff_view = dff_view[dff_view['SIN_VTA']]
             dff_view = dff_view.sort_values('VTA_PROM', ascending=False)
-            
             cols_fin = [df_s.columns[6], df_s.columns[2], df_s.columns[3], df_s.columns[4], 'VTA_PROM', df_s.columns[21], df_s.columns[19]]
             disp = dff_view[cols_fin].copy()
             disp.columns = ['TIENDA', 'COD', 'DESC', 'CAT', 'VTA PROM', 'DIAS', 'CAJAS']
-            
             msg = [f"*SORIANA ({len(disp)})*"]
             for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESC']}\n📊 Inv:{r['CAJAS']} | Dias:{r['DIAS']}\n-")
             if len(disp)>40: msg.append("...")
             url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
             st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:fff;padding:12px;text-align:center;font-weight:bold;border-radius:8px;margin:10px 0;">📱 ENVIAR REPORTE WHATSAPP</div></a>', unsafe_allow_html=True)
-            
             def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.s_rojo else ['']*len(r)
             st.dataframe(disp.style.apply(sty, axis=1).format(precision=2), use_container_width=True, hide_index=True)
 
@@ -293,6 +304,7 @@ elif st.session_state.active_retailer == 'WALMART':
     if 'w_rank_pastas' not in st.session_state: st.session_state.w_rank_pastas = False
     if 'w_rank_olivas' not in st.session_state: st.session_state.w_rank_olivas = False
     if 'w_nutri_top10' not in st.session_state: st.session_state.w_nutri_top10 = False
+    if 'w_dias_inv' not in st.session_state: st.session_state.w_dias_inv = False # NUEVO
 
     def reset_ranks():
         st.session_state.w_rank_tiendas = False
@@ -300,15 +312,33 @@ elif st.session_state.active_retailer == 'WALMART':
         st.session_state.w_rank_olivas = False
         st.session_state.w_nutri_top10 = False
 
-    def tog_w_neg(): st.session_state.w_neg = not st.session_state.w_neg; st.session_state.w_4w = False
-    def tog_w_4w(): st.session_state.w_4w = not st.session_state.w_4w; st.session_state.w_neg = False
+    def tog_w_neg(): 
+        st.session_state.w_neg = not st.session_state.w_neg
+        st.session_state.w_4w = False
+        st.session_state.w_dias_inv = False
+        
+    def tog_w_4w(): 
+        st.session_state.w_4w = not st.session_state.w_4w
+        st.session_state.w_neg = False
+        st.session_state.w_dias_inv = False
+
+    def tog_w_dias_inv():
+        st.session_state.w_dias_inv = not st.session_state.w_dias_inv
+        if st.session_state.w_dias_inv:
+            st.session_state.w_neg = False
+            st.session_state.w_4w = False
     
     def set_rank(mode):
-        reset_ranks()
-        if mode == 'tiendas': st.session_state.w_rank_tiendas = True
-        elif mode == 'pastas': st.session_state.w_rank_pastas = True
-        elif mode == 'olivas': st.session_state.w_rank_olivas = True
-        elif mode == 'nutrioli': st.session_state.w_nutri_top10 = True
+        if mode == 'tiendas' and st.session_state.w_rank_tiendas: reset_ranks()
+        elif mode == 'pastas' and st.session_state.w_rank_pastas: reset_ranks()
+        elif mode == 'olivas' and st.session_state.w_rank_olivas: reset_ranks()
+        elif mode == 'nutrioli' and st.session_state.w_nutri_top10: reset_ranks()
+        else:
+            reset_ranks()
+            if mode == 'tiendas': st.session_state.w_rank_tiendas = True
+            elif mode == 'pastas': st.session_state.w_rank_pastas = True
+            elif mode == 'olivas': st.session_state.w_rank_olivas = True
+            elif mode == 'nutrioli': st.session_state.w_nutri_top10 = True
 
     @st.cache_data(**CACHE_CONFIG)
     def load_wal(path):
@@ -318,7 +348,6 @@ elif st.session_state.active_retailer == 'WALMART':
             df = df.drop_duplicates()
             c_code = df.columns[0]
             df[c_code] = df[c_code].astype(str).str.replace(r'\.0*$', '', regex=True)
-            
             for c in df.iloc[:, 92:97].columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             for c in df.iloc[:, 73:77].columns: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             df['PROM_PZS_MENSUAL'] = df.iloc[:, [73,74,75,76]].mean(axis=1)
@@ -326,6 +355,11 @@ elif st.session_state.active_retailer == 'WALMART':
             df[c42] = pd.to_numeric(df[c42], errors='coerce').fillna(0)
             c_cs = df.columns[96]
             df['SO_$'] = pd.to_numeric(df[c_cs], errors='coerce').fillna(0)
+            
+            # Col 33 = AH = Días Inv
+            c_ah = df.columns[33]
+            df[c_ah] = pd.to_numeric(df[c_ah], errors='coerce').fillna(0)
+            
             return df
         except: return None
 
@@ -335,7 +369,7 @@ elif st.session_state.active_retailer == 'WALMART':
         cq = df_w.columns[16]
         df_w = df_w[~df_w[cq].isin(['BAE','MB'])]
 
-        # Filtros
+        # --- FILTROS ---
         c1, c2 = st.columns(2)
         with c1:
             c_state = df_w.columns[7]
@@ -352,57 +386,92 @@ elif st.session_state.active_retailer == 'WALMART':
 
         with c2:
             sel_fmt = st.multiselect("Formato", sorted(df_w[cq].astype(str).unique()))
-            c_cat = df_w.columns[5]
-            sel_cat = st.multiselect("Categoría", sorted(df_w[c_cat].astype(str).unique()))
+            # Nuevo Filtro Producto (Col E - 4)
+            c_prod = df_w.columns[4]
+            sel_prod = st.multiselect("Producto", sorted(df_w[c_prod].astype(str).unique()))
 
         st.write("")
-        b1, b2 = st.columns(2)
+        b1, b2, b3 = st.columns(3, gap="small")
         with b1: st.button("📉 NEGATIVOS" if not st.session_state.w_neg else "📉 QUITAR NEG", on_click=tog_w_neg, use_container_width=True, type="primary")
         with b2: st.button("🔴 SIN VTA 4SEM" if not st.session_state.w_4w else "🔴 QUITAR 4SEM", on_click=tog_w_4w, use_container_width=True, type="primary")
+        with b3:
+            cls_dias = "rank-green-on" if st.session_state.w_dias_inv else "dias-inv-style"
+            st.markdown(f'<div class="{cls_dias}">', unsafe_allow_html=True)
+            if st.button("📅 DIAS INV", use_container_width=True): tog_w_dias_inv()
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        # Aplicar filtros
+        # Aplicar Filtros Globales
         dff = df_w.copy()
         if sel_state: dff = dff[dff[c_state].astype(str).isin(sel_state)]
         if sel_store: dff = dff[dff[c_store].astype(str).isin(sel_store)]
         if sel_fmt: dff = dff[dff[cq].astype(str).isin(sel_fmt)]
-        if sel_cat: dff = dff[dff[c_cat].astype(str).isin(sel_cat)]
+        if sel_prod: dff = dff[dff[c_prod].astype(str).isin(sel_prod)]
 
         if st.session_state.w_neg: dff = dff[dff[df_w.columns[42]] < 0]; st.warning("VISTA: NEGATIVOS")
         if st.session_state.w_4w:
             dff = dff[(dff[df_w.columns[73]]==0)&(dff[df_w.columns[74]]==0)&(dff[df_w.columns[75]]==0)&(dff[df_w.columns[76]]==0)]
             st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
-        # KPI
-        total_kpi = dff['SO_$'].sum() 
-        st.markdown(f"""
-            <div class='kpi-card'>
-                <div class='kpi-title'>Total Sell Out</div>
-                <div class='kpi-value'>${total_kpi:,.2f}</div>
-            </div>
-        """, unsafe_allow_html=True)
+        # --- VISTA CONDICIONAL: DIAS INV VS NORMAL ---
+        
+        if st.session_state.w_dias_inv:
+            # 1. SUMMARY METRICS (EL CAMBIO SOLICITADO EN LUGAR DE TOTAL SELL OUT)
+            st.subheader("📅 Reporte Días Inventario")
+            
+            # Calculo de promedios especificos (Col 33 = AH)
+            col_ah = df_w.columns[33]
+            col_desc = df_w.columns[4]
+            
+            val_nutri = dff[dff[col_desc].str.contains("ACEITE NUTRIOLI 946M", case=False, na=False)][col_ah].mean()
+            val_gran = dff[dff[col_desc].str.contains("GRAN TRADICION", case=False, na=False)][col_ah].mean()
+            val_sabro = dff[dff[col_desc].str.contains("SABROSANO 850ML", case=False, na=False)][col_ah].mean()
+            
+            # Manejo de NaNs
+            val_nutri = val_nutri if pd.notna(val_nutri) else 0
+            val_gran = val_gran if pd.notna(val_gran) else 0
+            val_sabro = val_sabro if pd.notna(val_sabro) else 0
 
-        # --- CORRECCIÓN ERROR ANTERIOR: SELECCIONAR SOLO 6 COLUMNAS ---
-        cols = [
-            df_w.columns[0],  # CODIGO
-            df_w.columns[4],  # DESC
-            df_w.columns[15], # TIENDA
-            df_w.columns[42], # EXIST
-            'SO_$',           # SELL OUT
-            'PROM_PZS_MENSUAL'# PROM
-        ]
-        disp = dff[cols].copy()
-        disp.columns = ['CODIGO', 'DESCRIPCION', 'TIENDA', 'EXISTENCIA', 'SELL OUT', 'PROM PZS MENSUAL']
+            # Mostrar tarjetas de métricas
+            m1, m2, m3 = st.columns(3)
+            m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M (Prom Días)</div><div class='kpi-value' style='color:#0071DC;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
+            m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION (Prom Días)</div><div class='kpi-value' style='color:#0071DC;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
+            m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML (Prom Días)</div><div class='kpi-value' style='color:#0071DC;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
 
-        msg = [f"*WALMART ({len(disp)})*"]
-        for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESCRIPCION']}\n📊 Ext:{r['EXISTENCIA']} | SO$:{r['SELL OUT']:,.2f}\n-")
-        if len(disp)>40: msg.append("...")
-        url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
-        st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:fff;padding:12px;text-align:center;font-weight:bold;border-radius:8px;margin:10px 0;">📱 ENVIAR REPORTE WHATSAPP</div></a>', unsafe_allow_html=True)
+            # 2. TABLA DETALLADA (TIENDA, CODIGO, DESC, DIAS INV)
+            cols_dias = [
+                df_w.columns[15], # Tienda
+                df_w.columns[0],  # Codigo
+                df_w.columns[4],  # Descripcion
+                df_w.columns[33]  # Dias Inv
+            ]
+            disp_dias = dff[cols_dias].copy()
+            disp_dias.columns = ['TIENDA', 'CODIGO', 'DESCRIPCION', 'DIAS INVENTARIO']
+            
+            st.dataframe(disp_dias.style.format({'DIAS INVENTARIO': "{:,.1f}"}), use_container_width=True, hide_index=True)
 
-        def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.w_4w else ['']*len(r)
-        st.dataframe(disp.style.apply(sty, axis=1).format({'SELL OUT':"${:,.2f}", 'PROM PZS MENSUAL':"{:,.2f}"}), use_container_width=True, hide_index=True)
+        else:
+            # --- VISTA NORMAL SELL OUT ---
+            total_kpi = dff['SO_$'].sum() 
+            st.markdown(f"""
+                <div class='kpi-card'>
+                    <div class='kpi-title'>Total Sell Out</div>
+                    <div class='kpi-value'>${total_kpi:,.2f}</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-        # RANKINGS
+            cols = [df_w.columns[0], df_w.columns[4], df_w.columns[15], df_w.columns[42], 'SO_$', 'PROM_PZS_MENSUAL']
+            disp = dff[cols].copy()
+            disp.columns = ['CODIGO', 'DESCRIPCION', 'TIENDA', 'EXISTENCIA', 'SELL OUT', 'PROM PZS MENSUAL']
+
+            msg = [f"*WALMART ({len(disp)})*"]
+            for _, r in disp.head(40).iterrows(): msg.append(f"🏢 {r['TIENDA']}\n📦 {r['DESCRIPCION']}\n📊 Ext:{r['EXISTENCIA']} | SO$:{r['SELL OUT']:,.2f}\n-")
+            if len(disp)>40: msg.append("...")
+            url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
+            st.markdown(f'<a href="{url}" target="_blank" style="text-decoration:none;"><div style="background-color:#25D366;color:fff;padding:12px;text-align:center;font-weight:bold;border-radius:8px;margin:10px 0;">📱 ENVIAR REPORTE WHATSAPP</div></a>', unsafe_allow_html=True)
+
+            def sty(r): return ['background-color:#ffcccc;color:#000']*len(r) if st.session_state.w_4w else ['']*len(r)
+            st.dataframe(disp.style.apply(sty, axis=1).format({'SELL OUT':"${:,.2f}", 'PROM PZS MENSUAL':"{:,.2f}"}), use_container_width=True, hide_index=True)
+
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
 
