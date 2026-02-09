@@ -275,10 +275,14 @@ if st.session_state.active_retailer == 'SORIANA':
             val_sab = val_sab if pd.notna(val_sab) else 0
             val_pas = val_pas if pd.notna(val_pas) else 0
 
+            # --- COLORES SORIANA ---
             k1, k2, k3 = st.columns(3)
-            k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
-            k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
-            k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>PASTAS (Promedio)</div><div class='kpi-value' style='color:#0071DC;'>{val_pas:,.1f}</div></div>", unsafe_allow_html=True)
+            # Verde
+            k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
+            # Rosa Mexicano
+            k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
+            # Verde Limon
+            k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>PASTAS (Promedio)</div><div class='kpi-value' style='color:#64DD17;'>{val_pas:,.1f}</div></div>", unsafe_allow_html=True)
 
             lista_ordenada = [
                 "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML",
@@ -470,7 +474,7 @@ elif st.session_state.active_retailer == 'WALMART':
             val_gran = val_gran if pd.notna(val_gran) else 0
             val_sabro = val_sabro if pd.notna(val_sabro) else 0
 
-            # --- APLICACIÓN DE COLORES SOLICITADA ---
+            # --- APLICACIÓN DE COLORES WALMART ---
             m1, m2, m3 = st.columns(3)
             # Verde Nutrioli
             m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M</div><div class='kpi-value' style='color:#28a745;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
