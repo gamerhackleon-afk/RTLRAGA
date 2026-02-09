@@ -250,6 +250,41 @@ if st.session_state.active_retailer == 'SORIANA':
 
         if st.session_state.s_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
+            
+            # --- KPI Calculations ---
+            # 1. Nutrioli 850
+            col_desc_s = dff.columns[3] # Col D
+            col_dias_s = dff.columns[21] # Col V
+            
+            mask_nut = dff[col_desc_s].astype(str).str.contains("ACEITE DE SOYA NUTRIOLI BOT 850 ML", case=False, na=False)
+            val_nut = dff.loc[mask_nut, col_dias_s].mean()
+            
+            # 2. Sabrosano
+            mask_sab = dff[col_desc_s].astype(str).str.contains("ACEITE COMESTIBLE SABROSANO 850 ML", case=False, na=False)
+            val_sab = dff.loc[mask_sab, col_dias_s].mean()
+            
+            # 3. Pastas (Grupo)
+            target_pastas = [
+                "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR",
+                "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR",
+                "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR",
+                "PASTA CODO NUTRIOLI 200GR"
+            ]
+            clean_target = [p.strip() for p in target_pastas]
+            mask_pas = dff[col_desc_s].astype(str).str.strip().isin(clean_target)
+            val_pas = dff.loc[mask_pas, col_dias_s].mean()
+            
+            val_nut = val_nut if pd.notna(val_nut) else 0
+            val_sab = val_sab if pd.notna(val_sab) else 0
+            val_pas = val_pas if pd.notna(val_pas) else 0
+
+            # Mostrar Cards
+            k1, k2, k3 = st.columns(3)
+            k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
+            k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#0071DC;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
+            k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>PASTAS (Promedio)</div><div class='kpi-value' style='color:#0071DC;'>{val_pas:,.1f}</div></div>", unsafe_allow_html=True)
+
+            # --- Tabla Detallada ---
             lista_ordenada = [
                 "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML",
                 "ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML",
