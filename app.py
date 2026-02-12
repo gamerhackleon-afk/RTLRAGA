@@ -3,6 +3,7 @@ import pandas as pd
 import time
 import urllib.parse 
 import requests 
+import altair as alt 
 from io import BytesIO 
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
@@ -65,11 +66,13 @@ def get_kpi_mean(df, desc_col, days_col, pattern):
 
 def whatsapp_report(title, data, max_rows=40):
     msg = [f"*{title} ({len(data)})*"]
-    col_desc = 'DESCRIPCION' if 'DESCRIPCION' in data.columns else 'ARTICULO'
-    col_inv = 'DIAS INV' if 'DIAS INV' in data.columns else 'DIAS_INV'
+    col_desc = next((c for c in ['DESCRIPCION', 'ARTICULO', 'Artículo'] if c in data.columns), 'ARTICULO')
+    col_inv = next((c for c in ['DIAS INV', 'DIAS_INV', 'DIAS INVENTARIO'] if c in data.columns), 'DIAS INV')
+    col_tienda = next((c for c in ['TIENDA'] if c in data.columns), 'TIENDA')
     
     for _, r in data.head(max_rows).iterrows():
-        msg.append(f"🏢 {r.get('TIENDA', '')}\n📦 {r.get(col_desc, '')}\n📊 {r.get(col_inv, '')}")
+        val_inv = r.get(col_inv, '')
+        msg.append(f"🏢 {r.get(col_tienda, '')}\n📦 {r.get(col_desc, '')}\n📊 {val_inv}")
     if len(data) > max_rows:
         msg.append("...")
     url = f"https://wa.me/?text={urllib.parse.quote(chr(10).join(msg))}"
@@ -92,12 +95,7 @@ def get_data(key, uploader_key, load_func):
 
 def set_retailer(retailer_name):
     st.session_state.active_retailer = retailer_name
-    # Reset de variables lógicas
-    logic_vars = [
-        's_rojo', 's_dias_inv', 
-        'w_neg', 'w_4w', 'w_dias_inv', 'w_rank_tiendas', 'w_rank_pastas', 'w_rank_olivas', 'w_nutri_top10', 
-        'c_alt', 'c_neg', 'c_dias_inv', 'c_neg_zero', 'c_under_10'
-    ]
+    logic_vars = ['s_rojo', 's_dias_inv', 'w_neg', 'w_4w', 'w_dias_inv', 'w_rank_tiendas', 'w_rank_pastas', 'w_rank_olivas', 'w_nutri_top10', 'c_alt', 'c_neg', 'c_dias_inv', 'c_neg_zero', 'c_under_10']
     for var in logic_vars:
         if var in st.session_state: st.session_state[var] = False
 
@@ -152,20 +150,23 @@ def load_wal(path):
 def load_che(path):
     try:
         df = pd.read_excel(path)
-        if df.shape[1] < 18: return None
-        # Limpieza basura
-        df = df.dropna(subset=[df.columns[11]])
-        df = df[pd.to_numeric(df.iloc[:,8], errors='coerce').notna()]
+        if df.shape[1] < 20: return None 
+        df = df.dropna(subset=[df.columns[12]]) # Articulo M
+        df = df[pd.to_numeric(df.iloc[:,9], errors='coerce').notna()] # No Tienda J
         
-        # Mapeo de columnas para Chedraui (Indices 0-based)
-        # 3:Estado, 8:No, 9:Tienda, 11:Articulo(L), 12:Inv(M), 16:VtaProm(Q), 17:DiasInv(R)
         df.rename(columns={
-            df.columns[3]: "ESTADO", df.columns[8]: "NO_TIENDA", df.columns[9]: "TIENDA",
-            df.columns[11]: "ARTICULO", df.columns[12]: "INV_ULT_SEM",
-            df.columns[16]: "VENTA_PROM_D", df.columns[17]: "DIAS_INV"
+            df.columns[3]: "ESTADO", 
+            df.columns[8]: "CATEGORIA",
+            df.columns[9]: "NO_TIENDA",
+            df.columns[10]: "TIENDA",
+            df.columns[12]: "ARTICULO",
+            df.columns[13]: "INV_ULT_SEM",
+            df.columns[17]: "VTA_PROM_DIARIA",
+            df.columns[18]: "DIAS_INV",
+            df.columns[19]: "SELL_OUT"
         }, inplace=True)
 
-        for col in ["INV_ULT_SEM", "VENTA_PROM_D", "DIAS_INV"]:
+        for col in ["INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
         return df
@@ -188,7 +189,7 @@ st.markdown(f"""
 html, body {{ font-family: 'Inter', sans-serif; }}
 .block-container {{ padding-top: 1.5rem !important; padding-bottom: 3rem !important; }}
 
-.kpi-card {{ background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }}
+.kpi-card {{ background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 20px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; height: 100%; display: flex; flex-direction: column; justify-content: center; }}
 .kpi-title {{ font-size: 0.9rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }}
 .kpi-value {{ font-size: 2.5rem; font-weight: 800; margin-top: 5px; }}
 
@@ -389,6 +390,25 @@ def view_walmart(df_w):
             dff = dff[(dff.iloc[:,73]==0)&(dff.iloc[:,74]==0)&(dff.iloc[:,75]==0)&(dff.iloc[:,76]==0)]
             st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
+        # CATEGORIAS PIE CHART
+        def get_walmart_category(desc):
+            desc = str(desc).upper().replace(" ", "")
+            if "NUTRIOLI946M" in desc: return "NUTRIOLI" # Specific 946M
+            if "SABROSANO" in desc: return "SABROSANO"
+            if "GRANTRADICION" in desc: return "GT"
+            if "BALSAMICO" in desc: return "BALSAMICO"
+            
+            # Olivas check
+            if any(k in desc for k in ["OLISPRAY", "OLICOCINA", "OLIDENUT", "OLIVAEXVIRGEN", "OLIVAVIRGEN", "OLIEV"]): return "OLIVAS"
+            
+            # Pastas check
+            if "NUTRIOLI" in desc and any(k in desc for k in ["SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
+            
+            # Rest Nutrioli
+            if "NUTRIOLI" in desc: return "REST NUTRIOLI"
+            
+            return None
+
         if st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             
@@ -406,9 +426,33 @@ def view_walmart(df_w):
             st.dataframe(disp.style.format({'DIAS INVENTARIO': "{:,.1f}"}), use_container_width=True, hide_index=True)
             
         else:
-            total_so = dff['SO_$'].sum()
-            st.markdown(f"<div class='kpi-card'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+            c_kpi, c_chart = st.columns([1, 2])
             
+            with c_kpi:
+                total_so = dff['SO_$'].sum()
+                st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+            
+            with c_chart:
+                chart_data = dff.copy()
+                chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_walmart_category)
+                chart_data = chart_data.dropna(subset=['Category'])
+                pie_df = chart_data.groupby('Category')['SO_$'].sum().reset_index()
+                pie_df = pie_df[pie_df['SO_$'] > 0]
+                
+                if not pie_df.empty:
+                    domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI"]
+                    range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39"]
+                    
+                    c = alt.Chart(pie_df).mark_arc(innerRadius=60).encode(
+                        theta=alt.Theta(field="SO_$", type="quantitative"),
+                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Categoría")),
+                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
+                    ).properties(height=300)
+                    
+                    st.altair_chart(c, use_container_width=True)
+                else:
+                    st.info("Sin datos para gráfica.")
+
             disp = dff[["CODIGO", "DESCRIPCION", "TIENDA", "EXISTENCIA", "SO_$", "PROM_PZS_MENSUAL"]].copy()
             disp.columns = ['CODIGO', 'DESCRIPCION', 'TIENDA', 'EXISTENCIA', 'SELL OUT', 'PROM PZS MENSUAL']
             
@@ -477,27 +521,13 @@ def view_walmart(df_w):
 
 def view_chedraui(df_c):
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
-    
-    # Init states
     if 'c_neg_zero' not in st.session_state: st.session_state.c_neg_zero = False
     if 'c_under_10' not in st.session_state: st.session_state.c_under_10 = False
     if 'c_dias_inv' not in st.session_state: st.session_state.c_dias_inv = False
     
-    # Toggles (Mutually Exclusive)
-    def tog_c_neg_zero(): 
-        st.session_state.c_neg_zero = not st.session_state.c_neg_zero
-        st.session_state.c_under_10 = False
-        st.session_state.c_dias_inv = False
-        
-    def tog_c_under_10(): 
-        st.session_state.c_under_10 = not st.session_state.c_under_10
-        st.session_state.c_neg_zero = False
-        st.session_state.c_dias_inv = False
-        
-    def tog_c_dias_inv():
-        st.session_state.c_dias_inv = not st.session_state.c_dias_inv
-        st.session_state.c_alt = False
-        st.session_state.c_neg = False
+    def tog_c_neg_zero(): st.session_state.c_neg_zero = not st.session_state.c_neg_zero; st.session_state.c_under_10 = False; st.session_state.c_dias_inv = False
+    def tog_c_under_10(): st.session_state.c_under_10 = not st.session_state.c_under_10; st.session_state.c_neg_zero = False; st.session_state.c_dias_inv = False
+    def tog_c_dias_inv(): st.session_state.c_dias_inv = not st.session_state.c_dias_inv; st.session_state.c_alt = False; st.session_state.c_neg = False
 
     if df_c is not None:
         c1, c2 = st.columns(2)
@@ -507,10 +537,9 @@ def view_chedraui(df_c):
         with c2:
             fil_ed = st.multiselect("Estado", sorted(df_c["ESTADO"].astype(str).unique()))
             fil_art = st.multiselect("Artículo", sorted(df_c["ARTICULO"].astype(str).unique()))
+            fil_cat = st.multiselect("Categoría", sorted(df_c["CATEGORIA"].astype(str).unique()))
 
-        # Base filter (for KPIs)
-        dff_base = apply_filters(df_c, ["NO_TIENDA", "TIENDA", "ESTADO"], [fil_no, fil_ti, fil_ed])
-        # Table filter (includes article)
+        dff_base = apply_filters(df_c, ["NO_TIENDA", "TIENDA", "ESTADO", "CATEGORIA"], [fil_no, fil_ti, fil_ed, fil_cat])
         dff = apply_filters(dff_base, ["ARTICULO"], [fil_art])
 
         b1, b2, b3 = st.columns(3, gap="small")
@@ -524,40 +553,75 @@ def view_chedraui(df_c):
 
         if st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
-            
-            # KPIs calculated on BASE filtered data (dff_base), not including the article filter
-            # This ensures KPI cards don't disappear if you filter for a specific item like "Ave"
             val_nut = get_kpi_mean(dff_base, "ARTICULO", "DIAS_INV", "Nutrioli Bot 850")
             val_sab = get_kpi_mean(dff_base, "ARTICULO", "DIAS_INV", "Sabrosano Mixto 850")
             val_ave = get_kpi_mean(dff_base, "ARTICULO", "DIAS_INV", "Ave Soya-Canola 850")
             
             k1, k2, k3 = st.columns(3)
-            # Verde
             k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
-            # Rosa Mexicano
             k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
-            # Rojo
             k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             
-            # Table uses fully filtered data (dff)
-            disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VENTA_PROM_D", "DIAS_INV"]].copy()
-            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VENTA PROM D', 'DIAS INV']
-            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VENTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
+            disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
+            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VENTA PROM D', 'DIAS INV', 'SELL OUT']
+            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VENTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
             
         else:
-            view_mode = ""
-            if st.session_state.c_neg_zero:
-                dff = dff[dff["DIAS_INV"] <= 0]
-                view_mode = "Negativos o Cero"
-            if st.session_state.c_under_10:
-                dff = dff[dff["DIAS_INV"] < 10]
-                view_mode = "Menor a 10 Días"
+            def get_chedraui_category(desc):
+                desc = str(desc).upper().replace(" ", "")
+                if "BALSAMICO" in desc: return "BALSAMICO"
+                if "SABROSANO" in desc: return "SABROSANO"
+                if "GRANTRADICION" in desc: return "GT"
+                if "MISAZON" in desc or "MISAZÓN" in desc: return "MI SAZON"
+                if "AVE" in desc and ("SOYA-CANOLA" in desc or "AEROSOL" in desc): return "AVE"
+                
+                # Check for PASTAS (Nutrioli brand + shape)
+                if "NUTRIOLI" in desc and any(k in desc for k in ["FUSILLI", "SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
+                
+                # Check for OLIVAS (Oli brand + type)
+                if "OLI" in desc and ("OLIVA" in desc or "EV" in desc or "AEROSOL" in desc): return "OLIVAS"
+                
+                # Check for NUTRIOLI (Main items) vs REST
+                if "NUTRIOLI" in desc and ("400ML" in desc or "850ML" in desc) and "PROTECT" not in desc and "DEFENSAS" not in desc: return "NUTRIOLI"
+                
+                if "NUTRIOLI" in desc: return "REST NUTRIOLI"
+                
+                return None
 
-            disp = dff[["ARTICULO", "INV_ULT_SEM", "VENTA_PROM_D", "DIAS_INV"]].copy()
-            disp.columns = ['ARTICULO', 'INV ULT SEM', 'VENTA PROM D', 'DIAS INV']
+            c_kpi, c_chart = st.columns([1, 2])
             
+            with c_kpi:
+                total_so = dff['SELL_OUT'].sum()
+                st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+            
+            with c_chart:
+                chart_data = dff.copy()
+                chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
+                chart_data = chart_data.dropna(subset=['Category'])
+                pie_df = chart_data.groupby('Category')['SELL_OUT'].sum().reset_index()
+                pie_df = pie_df[pie_df['SELL_OUT'] > 0]
+                
+                if not pie_df.empty:
+                    domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
+                    range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
+                    
+                    c = alt.Chart(pie_df).mark_arc(innerRadius=60).encode(
+                        theta=alt.Theta(field="SELL_OUT", type="quantitative"),
+                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Categoría")),
+                        tooltip=['Category', alt.Tooltip('SELL_OUT', format='$,.2f')]
+                    ).properties(height=300)
+                    st.altair_chart(c, use_container_width=True)
+                else:
+                    st.info("Sin datos para gráfica.")
+
+            view_mode = ""
+            if st.session_state.c_neg_zero: dff = dff[dff["DIAS_INV"] <= 0]; view_mode = "Negativos o Cero"
+            if st.session_state.c_under_10: dff = dff[dff["DIAS_INV"] < 10]; view_mode = "Menor a 10 Días"
+
+            disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
+            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VTA PROM D', 'DIAS INV', 'SELL OUT']
             st.caption(f"📋 Vista: {view_mode or 'Completa'}")
-            st.dataframe(disp.style.format(precision=2), use_container_width=True, hide_index=True)
+            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
 def view_fresko():
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['FRESKO']}; color: #444;'>FRESKO</div>", unsafe_allow_html=True)
