@@ -439,6 +439,9 @@ def view_walmart(df_w):
                 pie_df = chart_data.groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
                 
+                # Calculate total for % logic
+                total_pie = pie_df['SO_$'].sum()
+                
                 if not pie_df.empty:
                     domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI"]
                     range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39"]
@@ -453,12 +456,14 @@ def view_walmart(df_w):
                         tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
                     )
 
-                    text = base.mark_text(radius=120).encode(
+                    text = base.mark_text(radius=130).encode( # Radius > outerRadius for label spacing
                         text=alt.Text("label_text:N"), 
                         order=alt.Order("SO_$", sort="descending"),
                         color=alt.value("black")
                     ).transform_calculate(
                         label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')"
+                    ).transform_filter(
+                        alt.datum['SO_$'] > (total_pie * 0.02) # Filter small labels (<2%)
                     )
                     
                     st.altair_chart(pie + text, use_container_width=True)
@@ -575,8 +580,8 @@ def view_chedraui(df_c):
             k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             
             disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
-            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VTA PROM D', 'DIAS INV', 'SELL OUT']
-            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VENTA PROM D', 'DIAS INV', 'SELL OUT']
+            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VENTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
             
         else:
             c_kpi, c_chart = st.columns([1, 2])
@@ -605,6 +610,8 @@ def view_chedraui(df_c):
                 pie_df = chart_data.groupby('Category')['SELL_OUT'].sum().reset_index()
                 pie_df = pie_df[pie_df['SELL_OUT'] > 0]
                 
+                total_pie = pie_df['SELL_OUT'].sum()
+                
                 if not pie_df.empty:
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
@@ -619,12 +626,14 @@ def view_chedraui(df_c):
                         tooltip=['Category', alt.Tooltip('SELL_OUT', format='$,.2f')]
                     )
 
-                    text = base.mark_text(radius=120).encode(
+                    text = base.mark_text(radius=130).encode(
                         text=alt.Text("label_text:N"), 
                         order=alt.Order("SELL_OUT", sort="descending"),
                         color=alt.value("black")
                     ).transform_calculate(
                         label_text="datum.Category + ': $' + format(datum['SELL_OUT'], ',.0f')"
+                    ).transform_filter(
+                        alt.datum['SELL_OUT'] > (total_pie * 0.02)
                     )
                     
                     st.altair_chart(pie + text, use_container_width=True)
