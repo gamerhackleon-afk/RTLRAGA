@@ -399,10 +399,10 @@ def view_walmart(df_w):
             if "BALSAMICO" in desc: return "BALSAMICO"
             
             # Olivas check
-            if any(k in desc for k in ["OLISPRAY", "OLICOCINA", "OLIDENUT", "OLIVAEXVIRGEN", "OLIVAVIRGEN", "OLIEV"]): return "OLIVAS"
+            if any(k in desc for k in ["OLISPRAY", "OLICOCINA", "OLIDENUTEV", "ACEITEOLIDEOLIVA", "OLIDENUT"]) and "BALSAMICO" not in desc: return "OLIVAS"
             
             # Pastas check
-            if "NUTRIOLI" in desc and any(k in desc for k in ["SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
+            if "NUTRIOLI" in desc and any(k in desc for k in ["SPAGUETTI", "FIDEO", "CODO", "PASTA"]): return "PASTAS"
             
             # Rest Nutrioli
             if "NUTRIOLI" in desc: return "REST NUTRIOLI"
@@ -443,13 +443,25 @@ def view_walmart(df_w):
                     domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI"]
                     range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39"]
                     
-                    c = alt.Chart(pie_df).mark_arc(innerRadius=60).encode(
-                        theta=alt.Theta(field="SO_$", type="quantitative"),
-                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Categoría")),
-                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
+                    base = alt.Chart(pie_df).encode(
+                        theta=alt.Theta(field="SO_$", type="quantitative", stack=True)
                     ).properties(height=300)
+
+                    pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
+                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
+                        order=alt.Order("SO_$", sort="descending"),
+                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
+                    )
+
+                    text = base.mark_text(radius=120).encode(
+                        text=alt.Text("label_text:N"), 
+                        order=alt.Order("SO_$", sort="descending"),
+                        color=alt.value("black")
+                    ).transform_calculate(
+                        label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')"
+                    )
                     
-                    st.altair_chart(c, use_container_width=True)
+                    st.altair_chart(pie + text, use_container_width=True)
                 else:
                     st.info("Sin datos para gráfica.")
 
@@ -563,31 +575,10 @@ def view_chedraui(df_c):
             k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             
             disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
-            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VENTA PROM D', 'DIAS INV', 'SELL OUT']
-            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VENTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VTA PROM D', 'DIAS INV', 'SELL OUT']
+            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
             
         else:
-            def get_chedraui_category(desc):
-                desc = str(desc).upper().replace(" ", "")
-                if "BALSAMICO" in desc: return "BALSAMICO"
-                if "SABROSANO" in desc: return "SABROSANO"
-                if "GRANTRADICION" in desc: return "GT"
-                if "MISAZON" in desc or "MISAZÓN" in desc: return "MI SAZON"
-                if "AVE" in desc and ("SOYA-CANOLA" in desc or "AEROSOL" in desc): return "AVE"
-                
-                # Check for PASTAS (Nutrioli brand + shape)
-                if "NUTRIOLI" in desc and any(k in desc for k in ["FUSILLI", "SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
-                
-                # Check for OLIVAS (Oli brand + type)
-                if "OLI" in desc and ("OLIVA" in desc or "EV" in desc or "AEROSOL" in desc): return "OLIVAS"
-                
-                # Check for NUTRIOLI (Main items) vs REST
-                if "NUTRIOLI" in desc and ("400ML" in desc or "850ML" in desc) and "PROTECT" not in desc and "DEFENSAS" not in desc: return "NUTRIOLI"
-                
-                if "NUTRIOLI" in desc: return "REST NUTRIOLI"
-                
-                return None
-
             c_kpi, c_chart = st.columns([1, 2])
             
             with c_kpi:
@@ -595,6 +586,19 @@ def view_chedraui(df_c):
                 st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             
             with c_chart:
+                def get_chedraui_category(desc):
+                    desc = str(desc).upper().replace(" ", "")
+                    if "BALSAMICO" in desc: return "BALSAMICO"
+                    if "SABROSANO" in desc: return "SABROSANO"
+                    if "GRANTRADICION" in desc: return "GT"
+                    if "MISAZON" in desc or "MISAZÓN" in desc: return "MI SAZON"
+                    if "AVE" in desc and ("SOYA-CANOLA" in desc or "AEROSOL" in desc): return "AVE"
+                    if "NUTRIOLI" in desc and any(k in desc for k in ["FUSILLI", "SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
+                    if "OLI" in desc and ("OLIVA" in desc or "EV" in desc or "AEROSOL" in desc): return "OLIVAS"
+                    if "NUTRIOLI" in desc and ("400ML" in desc or "850ML" in desc) and "PROTECT" not in desc and "DEFENSAS" not in desc: return "NUTRIOLI"
+                    if "NUTRIOLI" in desc: return "REST NUTRIOLI"
+                    return None
+
                 chart_data = dff.copy()
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
                 chart_data = chart_data.dropna(subset=['Category'])
@@ -605,12 +609,25 @@ def view_chedraui(df_c):
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     
-                    c = alt.Chart(pie_df).mark_arc(innerRadius=60).encode(
-                        theta=alt.Theta(field="SELL_OUT", type="quantitative"),
-                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=alt.Legend(title="Categoría")),
-                        tooltip=['Category', alt.Tooltip('SELL_OUT', format='$,.2f')]
+                    base = alt.Chart(pie_df).encode(
+                        theta=alt.Theta(field="SELL_OUT", type="quantitative", stack=True)
                     ).properties(height=300)
-                    st.altair_chart(c, use_container_width=True)
+
+                    pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
+                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
+                        order=alt.Order("SELL_OUT", sort="descending"),
+                        tooltip=['Category', alt.Tooltip('SELL_OUT', format='$,.2f')]
+                    )
+
+                    text = base.mark_text(radius=120).encode(
+                        text=alt.Text("label_text:N"), 
+                        order=alt.Order("SELL_OUT", sort="descending"),
+                        color=alt.value("black")
+                    ).transform_calculate(
+                        label_text="datum.Category + ': $' + format(datum['SELL_OUT'], ',.0f')"
+                    )
+                    
+                    st.altair_chart(pie + text, use_container_width=True)
                 else:
                     st.info("Sin datos para gráfica.")
 
