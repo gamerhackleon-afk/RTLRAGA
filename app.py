@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
-CACHE_CONFIG = {'ttl': None, 'max_entries': 5, 'show_spinner': False}
+CACHE_CONFIG = {'ttl': 3600, 'max_entries': 10, 'show_spinner': False}
 
 # URLs de Datos
 URLS_DB = {
@@ -95,7 +95,13 @@ def get_data(key, uploader_key, load_func):
 
 def set_retailer(retailer_name):
     st.session_state.active_retailer = retailer_name
-    logic_vars = ['s_rojo', 's_dias_inv', 'w_neg', 'w_4w', 'w_dias_inv', 'w_rank_tiendas', 'w_rank_pastas', 'w_rank_olivas', 'w_nutri_top10', 'c_alt', 'c_neg', 'c_dias_inv', 'c_neg_zero', 'c_under_10']
+    # Reset de variables lógicas (Incluyendo las de ranking Chedraui)
+    logic_vars = [
+        's_rojo', 's_dias_inv', 
+        'w_neg', 'w_4w', 'w_dias_inv', 'w_rank_tiendas', 'w_rank_pastas', 'w_rank_olivas', 'w_nutri_top10', 
+        'c_alt', 'c_neg', 'c_dias_inv', 'c_neg_zero', 'c_under_10',
+        'c_rank_gen', 'c_rank_pas', 'c_rank_oli', 'c_rank_nut'
+    ]
     for var in logic_vars:
         if var in st.session_state: st.session_state[var] = False
 
@@ -393,20 +399,13 @@ def view_walmart(df_w):
         # CATEGORIAS PIE CHART
         def get_walmart_category(desc):
             desc = str(desc).upper().replace(" ", "")
-            if "NUTRIOLI946M" in desc: return "NUTRIOLI" # Specific 946M
+            if "NUTRIOLI946M" in desc: return "NUTRIOLI"
             if "SABROSANO" in desc: return "SABROSANO"
             if "GRANTRADICION" in desc: return "GT"
             if "BALSAMICO" in desc: return "BALSAMICO"
-            
-            # Olivas check
             if any(k in desc for k in ["OLISPRAY", "OLICOCINA", "OLIDENUTEV", "ACEITEOLIDEOLIVA", "OLIDENUT"]) and "BALSAMICO" not in desc: return "OLIVAS"
-            
-            # Pastas check
-            if "NUTRIOLI" in desc and any(k in desc for k in ["SPAGUETTI", "FIDEO", "CODO", "PASTA"]): return "PASTAS"
-            
-            # Rest Nutrioli
+            if "NUTRIOLI" in desc and any(x in desc for x in ["SPAGUETTI", "FIDEO", "CODO", "PASTA"]): return "PASTAS"
             if "NUTRIOLI" in desc: return "REST NUTRIOLI"
-            
             return None
 
         if st.session_state.w_dias_inv:
@@ -439,7 +438,6 @@ def view_walmart(df_w):
                 pie_df = chart_data.groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
                 
-                # Calculate total for % logic
                 total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
@@ -456,14 +454,14 @@ def view_walmart(df_w):
                         tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
                     )
 
-                    text = base.mark_text(radius=130).encode( # Radius > outerRadius for label spacing
+                    text = base.mark_text(radius=130, fontSize=11).encode(
                         text=alt.Text("label_text:N"), 
                         order=alt.Order("SO_$", sort="descending"),
                         color=alt.value("black")
                     ).transform_calculate(
                         label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')"
                     ).transform_filter(
-                        alt.datum['SO_$'] > (total_pie * 0.02) # Filter small labels (<2%)
+                        alt.datum['SO_$'] > (total_pie * 0.02)
                     )
                     
                     st.altair_chart(pie + text, use_container_width=True)
@@ -542,9 +540,25 @@ def view_chedraui(df_c):
     if 'c_under_10' not in st.session_state: st.session_state.c_under_10 = False
     if 'c_dias_inv' not in st.session_state: st.session_state.c_dias_inv = False
     
+    # States for Ranking
+    if 'c_rank_gen' not in st.session_state: st.session_state.c_rank_gen = False
+    if 'c_rank_pas' not in st.session_state: st.session_state.c_rank_pas = False
+    if 'c_rank_oli' not in st.session_state: st.session_state.c_rank_oli = False
+    if 'c_rank_nut' not in st.session_state: st.session_state.c_rank_nut = False
+    
     def tog_c_neg_zero(): st.session_state.c_neg_zero = not st.session_state.c_neg_zero; st.session_state.c_under_10 = False; st.session_state.c_dias_inv = False
     def tog_c_under_10(): st.session_state.c_under_10 = not st.session_state.c_under_10; st.session_state.c_neg_zero = False; st.session_state.c_dias_inv = False
     def tog_c_dias_inv(): st.session_state.c_dias_inv = not st.session_state.c_dias_inv; st.session_state.c_alt = False; st.session_state.c_neg = False
+
+    def set_c_rank(mode):
+        st.session_state.c_rank_gen = False
+        st.session_state.c_rank_pas = False
+        st.session_state.c_rank_oli = False
+        st.session_state.c_rank_nut = False
+        if mode == 'GEN': st.session_state.c_rank_gen = True
+        elif mode == 'PAS': st.session_state.c_rank_pas = True
+        elif mode == 'OLI': st.session_state.c_rank_oli = True
+        elif mode == 'NUT': st.session_state.c_rank_nut = True
 
     if df_c is not None:
         c1, c2 = st.columns(2)
@@ -556,6 +570,7 @@ def view_chedraui(df_c):
             fil_art = st.multiselect("Artículo", sorted(df_c["ARTICULO"].astype(str).unique()))
             fil_cat = st.multiselect("Categoría", sorted(df_c["CATEGORIA"].astype(str).unique()))
 
+        # Base filter
         dff_base = apply_filters(df_c, ["NO_TIENDA", "TIENDA", "ESTADO", "CATEGORIA"], [fil_no, fil_ti, fil_ed, fil_cat])
         dff = apply_filters(dff_base, ["ARTICULO"], [fil_art])
 
@@ -580,10 +595,23 @@ def view_chedraui(df_c):
             k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             
             disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
-            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VENTA PROM D', 'DIAS INV', 'SELL OUT']
-            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VENTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VTA PROM D', 'DIAS INV', 'SELL OUT']
+            st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
             
         else:
+            def get_chedraui_category(desc):
+                desc = str(desc).upper().replace(" ", "")
+                if "BALSAMICO" in desc: return "BALSAMICO"
+                if "SABROSANO" in desc: return "SABROSANO"
+                if "GRANTRADICION" in desc: return "GT"
+                if "MISAZON" in desc or "MISAZÓN" in desc: return "MI SAZON"
+                if "AVE" in desc and ("SOYA-CANOLA" in desc or "AEROSOL" in desc): return "AVE"
+                if "NUTRIOLI" in desc and any(k in desc for k in ["FUSILLI", "SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
+                if "OLI" in desc and ("OLIVA" in desc or "EV" in desc or "AEROSOL" in desc): return "OLIVAS"
+                if "NUTRIOLI" in desc and ("400ML" in desc or "850ML" in desc) and "PROTECT" not in desc and "DEFENSAS" not in desc: return "NUTRIOLI"
+                if "NUTRIOLI" in desc: return "REST NUTRIOLI"
+                return None
+
             c_kpi, c_chart = st.columns([1, 2])
             
             with c_kpi:
@@ -591,19 +619,6 @@ def view_chedraui(df_c):
                 st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             
             with c_chart:
-                def get_chedraui_category(desc):
-                    desc = str(desc).upper().replace(" ", "")
-                    if "BALSAMICO" in desc: return "BALSAMICO"
-                    if "SABROSANO" in desc: return "SABROSANO"
-                    if "GRANTRADICION" in desc: return "GT"
-                    if "MISAZON" in desc or "MISAZÓN" in desc: return "MI SAZON"
-                    if "AVE" in desc and ("SOYA-CANOLA" in desc or "AEROSOL" in desc): return "AVE"
-                    if "NUTRIOLI" in desc and any(k in desc for k in ["FUSILLI", "SPAGUETTI", "FIDEO", "CODO"]): return "PASTAS"
-                    if "OLI" in desc and ("OLIVA" in desc or "EV" in desc or "AEROSOL" in desc): return "OLIVAS"
-                    if "NUTRIOLI" in desc and ("400ML" in desc or "850ML" in desc) and "PROTECT" not in desc and "DEFENSAS" not in desc: return "NUTRIOLI"
-                    if "NUTRIOLI" in desc: return "REST NUTRIOLI"
-                    return None
-
                 chart_data = dff.copy()
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
                 chart_data = chart_data.dropna(subset=['Category'])
@@ -626,7 +641,7 @@ def view_chedraui(df_c):
                         tooltip=['Category', alt.Tooltip('SELL_OUT', format='$,.2f')]
                     )
 
-                    text = base.mark_text(radius=130).encode(
+                    text = base.mark_text(radius=130, fontSize=11).encode(
                         text=alt.Text("label_text:N"), 
                         order=alt.Order("SELL_OUT", sort="descending"),
                         color=alt.value("black")
@@ -648,6 +663,97 @@ def view_chedraui(df_c):
             disp.columns = ['No.', 'TIENDA', 'ARTICULO', 'INV ULT SEM', 'VTA PROM D', 'DIAS INV', 'SELL OUT']
             st.caption(f"📋 Vista: {view_mode or 'Completa'}")
             st.dataframe(disp.style.format({'INV ULT SEM': "{:,.0f}", 'VTA PROM D': "{:,.2f}", 'DIAS INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+
+        # --- RANKING CHEDRAUI ---
+        st.divider()
+        st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
+        
+        # Filtro de Estado para Ranking
+        sel_st_rank = st.selectbox("Filtrar Estado (Ranking)", ["Todos"] + sorted(df_c["ESTADO"].astype(str).unique()), key="c_rnk_st")
+        
+        # Botones
+        cr1, cr2 = st.columns(2, gap="small")
+        with cr1:
+            st.markdown('<div class="btn-ranking-blue">', unsafe_allow_html=True)
+            if st.button("📊 GENERAL", key="c_rk_gen", use_container_width=True): set_c_rank('GEN')
+            st.markdown('</div>', unsafe_allow_html=True)
+        with cr2:
+            st.markdown('<div class="btn-ranking-orange">', unsafe_allow_html=True)
+            if st.button("🍝 PASTAS", key="c_rk_pas", use_container_width=True): set_c_rank('PAS')
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+        cr3, cr4 = st.columns(2, gap="small")
+        with cr3:
+            st.markdown('<div class="btn-ranking-olive">', unsafe_allow_html=True)
+            if st.button("🫒 OLIVAS", key="c_rk_oli", use_container_width=True): set_c_rank('OLI')
+            st.markdown('</div>', unsafe_allow_html=True)
+        with cr4:
+            st.markdown('<div class="btn-ranking-green">', unsafe_allow_html=True)
+            if st.button("🍃 NUTRIOLI", key="c_rk_nut", use_container_width=True): set_c_rank('NUT')
+            st.markdown('</div>', unsafe_allow_html=True)
+
+        # Logic Calculation
+        dff_rank = df_c.copy()
+        if sel_st_rank != "Todos":
+            dff_rank = dff_rank[dff_rank["ESTADO"].astype(str) == sel_st_rank]
+
+        # Product Lists
+        list_gen = [
+            "Vinagre Oli Nutrioli Balsámico 250 ml (3795515)", "Aceite Sabrosano Mixto 850 ML (3691244)", "Aceite Mi Sazón Vegetal 800 ML (3775895)",
+            "Pps Nutrioli Fusilli Integral (3878678)", "Aceite Ave Soya-Canola 850 ML (3696190)", "Pps Nutrioli Spaguetti 200 (3878673)",
+            "Pps Nutrioli Fusilli Verduras (3878676)", "Pps Nutrioli Fideo 200 Gr (3878671)", "Aceite Nutrioli Antigoteo 700 ML (3738492)",
+            "Pps Nutrioli Spaguetti Integra (3878677)", "Pps Nutrioli Codo Verduras 200 (3878675)", "Pps Nutrioli Codo 200 Gr (3878674)",
+            "Aceite Nutrioli Protect Defensas 850 ml (3828176)", "Pps Nutrioli Fusilli 450 (3878672)", "Ace Oliva EV Oli BOT 750 Ml (3284693)",
+            "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Aceite Gran Tradición Soya-Canola 800 ML (3009894)",
+            "Aceite Nutrioli Protect Mente 850 Ml (3009960)", "Aceite De Soya Nutrioli Bot 850 Ml (3132396)", "Ace Oliva Puro Oli BOT 500 Ml (3570614)",
+            "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite De Soya Nutrioli Bot 400 Ml (3590824)", "Aceite Mi Sazón Mixto 400 ML",
+            "Aceite Aerosol Nutrioli Soya Lata 180 Gr (3317342)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite Aerosol Ave Mixto 170 Gr (3693814)",
+            "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Nutrioli Soya 850 ML (3676715)", "Aceite Sabrosano Rinde + 850 ML (3782858)",
+            "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)", "Aceite Nutrioli 850+Pps Fusill (3880416)",
+            "Aceite Nutrioli 850+Pps Codo 2 (3880415)"
+        ]
+        list_pas = [
+            "Pps Nutrioli Fusilli Integral (3878678)", "Pps Nutrioli Spaguetti 200 (3878673)", "Pps Nutrioli Fusilli Verduras (3878676)",
+            "Pps Nutrioli Fideo 200 Gr (3878671)", "Pps Nutrioli Spaguetti Integra (3878677)", "Pps Nutrioli Codo Verduras 200 (3878675)",
+            "Pps Nutrioli Codo 200 Gr (3878674)", "Pps Nutrioli Fusilli 450 (3878672)", "Aceite Nutrioli 850+Pps Fusill (3880416)",
+            "Aceite Nutrioli 850+Pps Codo 2 (3880415)"
+        ]
+        list_oli = [
+            "Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)",
+            "Ace Oliva Puro Oli BOT 500 Ml (3570614)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite Oli Extra Virgen 500 Ml (3646332)",
+            "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)"
+        ]
+        list_nut = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
+
+        final_c_rank = None
+        target_list = []
+        rank_title = ""
+
+        if st.session_state.c_rank_gen:
+            target_list = list_gen
+            rank_title = "VENTA GENERAL ($)"
+        elif st.session_state.c_rank_pas:
+            target_list = list_pas
+            rank_title = "VENTA PASTAS ($)"
+        elif st.session_state.c_rank_oli:
+            target_list = list_oli
+            rank_title = "VENTA OLIVAS ($)"
+        elif st.session_state.c_rank_nut:
+            target_list = list_nut
+            rank_title = "VENTA NUTRIOLI ($)"
+
+        if target_list:
+            # Filter by specific product list
+            dff_rank = dff_rank[dff_rank["ARTICULO"].isin(target_list)]
+            
+            if not dff_rank.empty:
+                final_c_rank = dff_rank.groupby(["NO_TIENDA", "TIENDA"])['SELL_OUT'].sum().reset_index()
+                final_c_rank.columns = ['No Tienda', 'TIENDA', rank_title]
+                final_c_rank = final_c_rank.sort_values(by=rank_title, ascending=False)
+                
+                st.dataframe(final_c_rank.style.format({rank_title: "${:,.2f}"}), use_container_width=True, hide_index=True)
+            else:
+                st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
 def view_fresko():
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['FRESKO']}; color: #444;'>FRESKO</div>", unsafe_allow_html=True)
