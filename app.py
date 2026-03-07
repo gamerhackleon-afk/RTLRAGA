@@ -403,7 +403,6 @@ def view_soriana(df_s):
             st.dataframe(disp_sor_dias.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
             
         else:
-            # --- VISTA PRINCIPAL SORIANA: SELL OUT ---
             def get_soriana_category(desc):
                 desc = str(desc).upper().replace(" ", "")
                 if "SABROSANO" in desc: return "SABROSANO"
@@ -420,7 +419,7 @@ def view_soriana(df_s):
             c_kpi, c_chart = st.columns([1, 2])
             with c_kpi:
                 total_so = dff['SO_$'].sum()
-                st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card' style='height: 350px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             
             with c_chart:
                 chart_data = dff.copy()
@@ -430,18 +429,19 @@ def view_soriana(df_s):
                 total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
+                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     
-                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SO_$", type="quantitative", stack=True)).properties(height=300)
+                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SO_$", type="quantitative", stack=True)).properties(height=350)
                     pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
                         color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
                         order=alt.Order("SO_$", sort="descending"),
-                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
+                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f'), alt.Tooltip('Percent', format='.1f', title='%')]
                     )
-                    text = base.mark_text(radius=130, fontSize=11).encode(
+                    text = base.mark_text(radius=145, fontSize=11).encode(
                         text=alt.Text("label_text:N"), order=alt.Order("SO_$", sort="descending"), color=alt.value("black")
-                    ).transform_calculate(label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')").transform_filter(alt.datum['SO_$'] > (total_pie * 0.02))
+                    ).transform_calculate(label_text="datum.Category + ' (' + format(datum.Percent, '.0f') + '%): $' + format(datum['SO_$'], ',.0f')").transform_filter(alt.datum['SO_$'] > (total_pie * 0.025))
                     st.altair_chart(pie + text, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
@@ -451,13 +451,11 @@ def view_soriana(df_s):
             
             disp = dff[["NO_TIENDA", "TIENDA", "CODIGO", "DESCRIPCION", "INV_CAJAS", "SO_$", "SO_4SEM", "DIAS_INV"]].copy()
             disp.columns = ['No.', 'TIENDA', 'CODIGO', 'ARTICULO', 'INV CAJAS', 'SELL OUT SEM', 'SELL OUT ULT 4 SEM', 'DIAS INV']
-            
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM', ascending=False)
             
             whatsapp_report("SORIANA Reporte", disp)
             st.dataframe(disp.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
 
-        # --- RANKING SORIANA ---
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         
@@ -553,7 +551,6 @@ def view_walmart(df_w):
         with st.expander("🔍 Filtros Avanzados", expanded=True):
             c1, c2, c3 = st.columns(3)
             with c1:
-                # Filtro Marca excluyendo "NUTRIOLI + PASTA"
                 marca_opts = sorted([m for m in df_w["MARCA"].astype(str).unique() if m.strip().upper() not in ["NUTRIOLI + PASTA", "NUTRIOLI  PASTA", "NUTRIOLI PASTA"]])
                 sel_marca = st.multiselect("Marca", marca_opts)
                 sel_state = st.multiselect("Estado", sorted(df_w["ESTADO"].astype(str).unique()))
@@ -562,7 +559,6 @@ def view_walmart(df_w):
                 sel_store = st.multiselect("Tienda", unique_stores)
                 sel_fmt = st.multiselect("Formato", sorted(df_w["FORMATO"].astype(str).unique()))
             with c3:
-                # Exclusión visual de la lista solicitada para el menú desplegable "Artículo"
                 lista_excluida_filtro = [
                     "ACEITE VEGETAL SABROSANO RINDE MAS 850ML", "OLI SPRAY ACEITE DE OLIVA 145ML",
                     "ACEITE MIXTO GRAN TRADICION 1L", "ACEITE GRAN TRADICION 900ML",
@@ -572,7 +568,6 @@ def view_walmart(df_w):
                 ]
                 excluidas_clean = [x.strip().upper() for x in lista_excluida_filtro]
                 opciones_prod = [p for p in df_w["DESCRIPCION"].astype(str).unique() if p.strip().upper() not in excluidas_clean]
-                
                 sel_prod = st.multiselect("Artículo", sorted(opciones_prod))
 
         dff_kpi = apply_filters(df_w, ["MARCA", "ESTADO", "TIENDA", "FORMATO"], [sel_marca, sel_state, sel_store, sel_fmt])
@@ -613,7 +608,9 @@ def view_walmart(df_w):
             desc_clean = str(desc).upper().replace(" ", "").replace("&NBSP;", "")
             
             if any(b in desc_clean for b in borges_clean): return "BORGES"
-            if "NUTRIOLI946M" in desc_clean: return "NUTRIOLI"
+            
+            if "NUTRIOLI" in desc_clean and "946" in desc_clean: return "NUTRIOLI"
+            
             if "SABROSANO" in desc_clean: return "SABROSANO"
             if "GRANTRADICION" in desc_clean: return "GT"
             if "BALSAMICO" in desc_clean: return "BALSAMICO"
@@ -682,7 +679,7 @@ def view_walmart(df_w):
             total_so = dff['SO_$'].sum()
             
             with c_kpi:
-                st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card' style='height: 350px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             
             with c_chart:
                 chart_data = dff.copy()
@@ -692,26 +689,26 @@ def view_walmart(df_w):
                 total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
+                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
                     domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI", "BORGES"]
                     range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39", "#FF0000"]
                     
                     base = alt.Chart(pie_df).encode(
                         theta=alt.Theta(field="SO_$", type="quantitative", stack=True)
-                    ).properties(height=300)
+                    ).properties(height=350)
                     
                     pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
                         color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
                         order=alt.Order("SO_$", sort="descending"),
-                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
+                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f'), alt.Tooltip('Percent', format='.1f', title='%')]
                     )
                     
-                    # Mostrar etiquetas solo si superan el 2% DEL TOTAL, PERO SIEMPRE MOSTRAR BORGES
-                    text = base.mark_text(radius=130, fontSize=11).encode(
+                    text = base.mark_text(radius=145, fontSize=11).encode(
                         text=alt.Text("label_text:N"), order=alt.Order("SO_$", sort="descending"), color=alt.value("black")
                     ).transform_calculate(
-                        label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')"
+                        label_text="datum.Category + ' (' + format(datum.Percent, '.0f') + '%): $' + format(datum['SO_$'], ',.0f')"
                     ).transform_filter(
-                        (alt.datum['SO_$'] > (total_pie * 0.02)) | (alt.datum['Category'] == 'BORGES')
+                        (alt.datum['SO_$'] > (total_pie * 0.025)) | (alt.datum['Category'] == 'BORGES')
                     )
                     
                     st.altair_chart(pie + text, use_container_width=True)
@@ -834,7 +831,7 @@ def view_chedraui(df_c):
             c_kpi, c_chart = st.columns([1, 2])
             with c_kpi:
                 total_so = dff['SELL_OUT'].sum()
-                st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card' style='height: 350px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             with c_chart:
                 chart_data = dff.copy()
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
@@ -843,9 +840,10 @@ def view_chedraui(df_c):
                 total_pie = pie_df['SELL_OUT'].sum()
                 
                 if not pie_df.empty:
+                    pie_df['Percent'] = (pie_df['SELL_OUT'] / total_pie) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
-                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SELL_OUT", type="quantitative", stack=True)).properties(height=300)
+                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SELL_OUT", type="quantitative", stack=True)).properties(height=350)
                     pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
                         color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
                         order=alt.Order("SELL_OUT", sort="descending"),
@@ -853,7 +851,7 @@ def view_chedraui(df_c):
                     )
                     text = base.mark_text(radius=130, fontSize=11).encode(
                         text=alt.Text("label_text:N"), order=alt.Order("SELL_OUT", sort="descending"), color=alt.value("black")
-                    ).transform_calculate(label_text="datum.Category + ': $' + format(datum['SELL_OUT'], ',.0f')").transform_filter(alt.datum['SELL_OUT'] > (total_pie * 0.02))
+                    ).transform_calculate(label_text="datum.Category + ' (' + format(datum.Percent, '.0f') + '%): $' + format(datum['SELL_OUT'], ',.0f')").transform_filter(alt.datum.Percent > 2.5)
                     st.altair_chart(pie + text, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
