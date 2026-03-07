@@ -59,7 +59,6 @@ def apply_filters(df, filter_cols, selections):
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
-    # Limpiamos espacios y caracteres HTML extraños como &NBSP; para asegurar el match
     clean_desc = df[desc_col].astype(str).str.upper().str.replace("&NBSP;", "", regex=False).str.replace(" ", "", regex=False)
     clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
     mask = clean_desc.str.contains(clean_pattern, case=False, na=False)
@@ -109,14 +108,14 @@ def get_data(key, uploader_key, load_func):
 def set_retailer(retailer_name):
     st.session_state.active_retailer = retailer_name
     logic_vars = [
-        's_rojo', 's_dias_inv', 's_dias_prod',
+        's_rojo', 's_dias_inv', 's_dias_prod', 's_rank_gen', 's_rank_pas', 's_rank_oli', 's_rank_nut',
         'w_neg', 'w_4w', 'w_dias_inv', 'w_dias_prod', 'w_rank_tiendas', 'w_rank_pastas', 'w_rank_olivas', 'w_nutri_top10', 
         'c_alt', 'c_neg', 'c_dias_inv', 'c_neg_zero', 'c_under_10', 'c_rank_gen', 'c_rank_pas', 'c_rank_oli', 'c_rank_nut'
     ]
     for var in logic_vars:
         if var in st.session_state: st.session_state[var] = False
 
-# --- 4. FUNCIONES DE LECTURA DE EXCEL (CON PROTECCIÓN DE COLUMNAS) ---
+# --- 4. FUNCIONES DE LECTURA DE EXCEL ---
 def optimize_floats(df):
     for col in df.select_dtypes(include=['float64']).columns:
         df[col] = df[col].astype('float32')
@@ -158,7 +157,6 @@ def load_sor(path):
         df['VTA_PROM'] = df['SO_4SEM'] 
         return optimize_floats(df)
     except Exception as e: 
-        st.error(f"Error Soriana: {e}")
         return None
 
 @st.cache_data(**CACHE_CONFIG)
@@ -175,6 +173,7 @@ def load_wal(path):
         df.rename(columns={
             df.columns[0]: "CODIGO", df.columns[4]: "DESCRIPCION", df.columns[5]: "CATEGORIA",
             df.columns[7]: "ESTADO", df.columns[15]: "TIENDA", df.columns[16]: "FORMATO",
+            df.columns[18]: "MARCA",
             df.columns[33]: "DIAS_INV", df.columns[42]: "EXISTENCIA"
         }, inplace=True)
         df["CODIGO"] = df["CODIGO"].astype(str).str.replace(r'\.0*$', '', regex=True)
@@ -185,7 +184,6 @@ def load_wal(path):
         df['SO_$'] = df.iloc[:,96]
         return optimize_floats(df)
     except Exception as e: 
-        st.error(f"Error Walmart: {e}")
         return None
 
 @st.cache_data(**CACHE_CONFIG)
@@ -198,6 +196,9 @@ def load_che(path):
         
         while df.shape[1] < 20:
             df[f"COL_AUTO_{df.shape[1]}"] = 0
+            
+        col_h = pd.to_numeric(df.iloc[:, 7], errors='coerce')
+        df = df[col_h != 0]
             
         df = df.dropna(subset=[df.columns[12]])
         df = df[pd.to_numeric(df.iloc[:,9], errors='coerce').notna()]
@@ -213,7 +214,6 @@ def load_che(path):
             
         return optimize_floats(df)
     except Exception as e: 
-        st.error(f"Error Chedraui: {e}")
         return None
 
 @st.cache_data(**CACHE_CONFIG)
@@ -449,11 +449,9 @@ def view_soriana(df_s):
                 dff = dff[dff['SIN_VTA']]
                 st.caption("📋 Vista: Sin Venta")
             
-            # Tabla Unificada Soriana
             disp = dff[["NO_TIENDA", "TIENDA", "CODIGO", "DESCRIPCION", "INV_CAJAS", "SO_$", "SO_4SEM", "DIAS_INV"]].copy()
             disp.columns = ['No.', 'TIENDA', 'CODIGO', 'ARTICULO', 'INV CAJAS', 'SELL OUT SEM', 'SELL OUT ULT 4 SEM', 'DIAS INV']
             
-            # Ordenamos por Venta 
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM', ascending=False)
             
             whatsapp_report("SORIANA Reporte", disp)
@@ -551,17 +549,33 @@ def view_walmart(df_w):
 
     if df_w is not None:
         df_w = df_w[~df_w["FORMATO"].isin(['BAE','MB'])]
+        
         with st.expander("🔍 Filtros Avanzados", expanded=True):
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
+                # Filtro Marca excluyendo "NUTRIOLI + PASTA"
+                marca_opts = sorted([m for m in df_w["MARCA"].astype(str).unique() if m.strip().upper() not in ["NUTRIOLI + PASTA", "NUTRIOLI  PASTA", "NUTRIOLI PASTA"]])
+                sel_marca = st.multiselect("Marca", marca_opts)
                 sel_state = st.multiselect("Estado", sorted(df_w["ESTADO"].astype(str).unique()))
+            with c2:
                 unique_stores = sorted(df_w[df_w["ESTADO"].isin(sel_state)]["TIENDA"].astype(str).unique()) if sel_state else sorted(df_w["TIENDA"].astype(str).unique())
                 sel_store = st.multiselect("Tienda", unique_stores)
-            with c2:
                 sel_fmt = st.multiselect("Formato", sorted(df_w["FORMATO"].astype(str).unique()))
-                sel_prod = st.multiselect("Producto", sorted(df_w["DESCRIPCION"].astype(str).unique()))
+            with c3:
+                # Exclusión visual de la lista solicitada para el menú desplegable "Artículo"
+                lista_excluida_filtro = [
+                    "ACEITE VEGETAL SABROSANO RINDE MAS 850ML", "OLI SPRAY ACEITE DE OLIVA 145ML",
+                    "ACEITE MIXTO GRAN TRADICION 1L", "ACEITE GRAN TRADICION 900ML",
+                    "NUTRIOLI 946 ML +PASTA CODO 200G", "NUTRIOLI 946 ML +FUSILLI VERDURAS 200G",
+                    "NUTRIOLI SPAGUETTI ESENCIAL 200G", "NUTRIOLI FIDEO ESENCIAL 200G",
+                    "NUTRIOLI CODO ESENCIAL 200G", "NUTRIOLI FUSILLI VERDURAS 200G", "NUTRIOLI CODO VERDURAS 200G"
+                ]
+                excluidas_clean = [x.strip().upper() for x in lista_excluida_filtro]
+                opciones_prod = [p for p in df_w["DESCRIPCION"].astype(str).unique() if p.strip().upper() not in excluidas_clean]
+                
+                sel_prod = st.multiselect("Artículo", sorted(opciones_prod))
 
-        dff_kpi = apply_filters(df_w, ["ESTADO", "TIENDA", "FORMATO"], [sel_state, sel_store, sel_fmt])
+        dff_kpi = apply_filters(df_w, ["MARCA", "ESTADO", "TIENDA", "FORMATO"], [sel_marca, sel_state, sel_store, sel_fmt])
         dff = apply_filters(dff_kpi, ["DESCRIPCION"], [sel_prod])
 
         b1, b2, b3 = st.columns(3, gap="small")
@@ -581,53 +595,95 @@ def view_walmart(df_w):
         if st.session_state.w_neg: dff = dff[dff["EXISTENCIA"] < 0]; st.warning("VISTA: NEGATIVOS")
         if st.session_state.w_4w: dff = dff[(dff.iloc[:,73]==0)&(dff.iloc[:,74]==0)&(dff.iloc[:,75]==0)&(dff.iloc[:,76]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
+        # Configuración BORGES
+        borges_list = [
+            "BORGES ACEITE OLIVA EXTRA VIRGEN 500", "BORGES ACEITE OLIVA EXTRA SUAVE", 
+            "ACEITE DE OLIVA EXTRA VIRGEN KOSHER", "ACEITE DE OLIVA A LA ALBAHACA FRESCA", 
+            "ACEITE DE SOJA JENGIBRE", "ACEITE DE OLIVA AL AJO FRITO", 
+            "ACEITE DE OLIVA AL  ROMERO FRESCO", "BORGES ACEITE DE PEPITA UVA 500ML", 
+            "BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL", "BORGES VINAGRE BALSAMICO 250ML", 
+            "VINAGRE DE JEREZ 250 ML", "VINAGRE DE SIDRA 250 ML", "VINAGRE DE VINO FRAMBUESA", 
+            "VINAGRE DE VINO AL  AJO 250 ML", "BORGES VINAGRE VINO BLANCO", 
+            "VINAGRE DE MANZANA ECOLOGICO", "BORGES VINAGRE DE VINOTINTO", 
+            "VINAGRE DE VINO DE RIOJA BOTELLA 250ML", "BORGES ACEITE OLIVA 100 PURO CON AJO"
+        ]
+        borges_clean = [x.replace(" ", "").upper() for x in borges_list]
+
         def get_walmart_category(desc):
-            desc = str(desc).upper().replace(" ", "")
-            if "NUTRIOLI946M" in desc: return "NUTRIOLI"
-            if "SABROSANO" in desc: return "SABROSANO"
-            if "GRANTRADICION" in desc: return "GT"
-            if "BALSAMICO" in desc: return "BALSAMICO"
-            if any(k in desc for k in ["OLISPRAY", "OLICOCINA", "OLIDENUTEV", "ACEITEOLIDEOLIVA", "OLIDENUT"]) and "BALSAMICO" not in desc: return "OLIVAS"
-            if "NUTRIOLI" in desc and any(x in desc for x in ["SPAGUETTI", "FIDEO", "CODO", "PASTA"]): return "PASTAS"
-            if "NUTRIOLI" in desc: return "REST NUTRIOLI"
+            desc_clean = str(desc).upper().replace(" ", "").replace("&NBSP;", "")
+            
+            if any(b in desc_clean for b in borges_clean): return "BORGES"
+            if "NUTRIOLI946M" in desc_clean: return "NUTRIOLI"
+            if "SABROSANO" in desc_clean: return "SABROSANO"
+            if "GRANTRADICION" in desc_clean: return "GT"
+            if "BALSAMICO" in desc_clean: return "BALSAMICO"
+            if any(k in desc_clean for k in ["OLISPRAY", "OLICOCINA", "OLIDENUTEV", "ACEITEOLIDEOLIVA", "OLIDENUT"]) and "BALSAMICO" not in desc_clean: return "OLIVAS"
+            if "NUTRIOLI" in desc_clean and any(x in desc_clean for x in ["SPAGUETTI", "FIDEO", "CODO", "PASTA"]): return "PASTAS"
+            if "NUTRIOLI" in desc_clean: return "REST NUTRIOLI"
             return None
 
         if st.session_state.w_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
-            target_list = ["ACEITE NUTRIOLI 946M", "GRANTRADICION 850ML", "SABROSANO 850ML", "ACEITE AVE 850", "NUTRIOLI ACEITE PURO DE SOYA 400 ML", "NUTRIOLI ACEITE PROTECT MENTE 850 ML", "ACEITE NUTRIOLI DEFENSAS 850 ML", "NUTRIOLI ACEITE SOYA (Antigoteo)", "OLI DE NUT EV 250ML", "OLI DE NUT EV 500ML", "OLI DE NUT EV 750ML", "OLI COCINA 250ML", "OLI COCINA 500ML", "OLI COCINA 750ML", "ACEITE OLI DE OLIVA EX VIRGEN ORGANICO", "SPRAY NUTRIOLI 180ML", "AVE AEROSOL", "OLI SPRAY ACEITE DE OLIVA 145ML", "OLI VINAGRE BALSAMICO 250ML"]
+            target_list = [
+                "NUTRIOLI ACEITE PURO DE SOYA 946 ML", "NUTRIOLI ACEITE PURO DE SOYA 400 ML", 
+                "SABROSANO ACEITE 850ML MANTEQUILLA", "ACEITE COMESTIBLE GRAN TRADICION 850ML", 
+                "ACEITE SOYA NUTRIOLI ANTIGOTEO 700ML", "ACEITE NUTRIOLI DEFENSAS 850 ML", 
+                "NUTRIOLI ACEITE PROTECT MENTE 850 ML", "NUTRIOLI SPRAY 180 ML", 
+                "AVE AEROSOL 170GR", "OLI SPRAY ACEITE DE OLIVA 145ML", 
+                "OLI SPRAY ACEITE DE OLIVA EV 145ML", "OLI DE NUTRIOLI EXTRA VIRGEN 250ML", 
+                "OLI DE NUTRIOLI ACEITE DE OLIVA 500ML", "OLI DE NUTRIOLI ACEITE DE OLIVA 750ML", 
+                "OLI ACEITE DE OLIVA COCINA 250ML", "ACEITE DE OLIVA EXTRA VIRGEN OLI DE NUTR", 
+                "ACEITE OLI DE OLIVA EX VIRGEN ORGANICO", "OLI NUTRIOLI VINAGRE BALSAMICO MODENA250", 
+                "VINAGRE DE JEREZ 250 ML", "VINAGRE DE MANZANA ECOLOGICO", "VINAGRE DE SIDRA 250 ML", 
+                "VINAGRE DE VINO AL  AJO 250 ML", "VINAGRE DE VINO DE RIOJA BOTELLA 250ML", 
+                "VINAGRE DE VINO FRAMBUESA", "BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL", 
+                "BORGES ACEITE DE PEPITA UVA 500ML", "BORGES ACEITE OLIVA 100 PURO CON AJO", 
+                "BORGES ACEITE OLIVA EXTRA SUAVE", "BORGES ACEITE OLIVA EXTRA VIRGEN 500", 
+                "BORGES VINAGRE BALSAMICO 250ML", "BORGES VINAGRE DE VINOTINTO", 
+                "BORGES VINAGRE VINO BLANCO", "ACEITE DE OLIVA A LA ALBAHACA FRESCA", 
+                "ACEITE DE OLIVA AL  ROMERO FRESCO", "ACEITE DE OLIVA AL AJO FRITO", 
+                "ACEITE DE OLIVA EXTRA VIRGEN KOSHER", "ACEITE DE SOJA JENGIBRE"
+            ]
             res_rows = []
-            dff_kpi['DESC_CLEAN'] = dff_kpi["DESCRIPCION"].astype(str).str.upper().str.replace(r'&NBSP;', ' ', regex=True)
+            dff_kpi['DESC_NOSPACE'] = dff_kpi["DESCRIPCION"].astype(str).str.upper().str.replace(r'&NBSP;', '', regex=True).str.replace(" ", "", regex=False)
+            
             for item in target_list:
-                clean_item = item.replace(" ", "")
-                mask = dff_kpi['DESC_CLEAN'].str.replace(" ", "").str.contains(clean_item, case=False, regex=False)
+                clean_item = item.upper().replace("&NBSP;", "").replace(" ", "")
+                mask = dff_kpi['DESC_NOSPACE'].str.contains(clean_item, case=False, regex=False)
                 if mask.any():
                     subset = dff_kpi[mask]
                     avg_days = subset["DIAS_INV"].mean()
+                    sum_so = subset["SO_$"].sum()
                     code = subset["CODIGO"].iloc[0]
-                    res_rows.append({"CODIGO": code, "ARTICULO": item, "DIAS INV": avg_days})
+                    res_rows.append({"CODIGO": code, "ARTICULO": item, "DIAS DE INV": avg_days, "SELL OUT": sum_so})
                 else:
-                    res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV": 0})
-            st.dataframe(pd.DataFrame(res_rows).style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
+                    res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS DE INV": 0, "SELL OUT": 0})
+            
+            df_prod_summary = pd.DataFrame(res_rows)
+            st.dataframe(df_prod_summary.style.format({'DIAS DE INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
-            val_nutri = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "NUTRIOLI 946M")
-            val_sabro = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "SABROSANO 850ML")
-            val_ave = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "ACEITE AVE 850")
-            val_gran = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "GRANTRADICION")
+            val_nutri = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "NUTRIOLI ACEITE PURO DE SOYA 946 ML")
+            val_sabro = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "SABROSANO ACEITE 850ML MANTEQUILLA")
+            val_ave = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "ACEITE AVE 850ML")
+            val_gran = get_kpi_mean(dff_kpi, "DESCRIPCION", "DIAS_INV", "ACEITE COMESTIBLE GRAN TRADICION 850ML")
             
             m1, m2, m3, m4 = st.columns(4)
             m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M</div><div class='kpi-value' style='color:#28a745;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
             m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             m4.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
+            
             st.dataframe(dff[["TIENDA", "CODIGO", "DESCRIPCION", "DIAS_INV"]].rename(columns={"DIAS_INV":"DIAS INVENTARIO"}).style.format({'DIAS INVENTARIO': "{:,.1f}"}), use_container_width=True, hide_index=True)
             
         else:
             c_kpi, c_chart = st.columns([1, 2])
+            total_so = dff['SO_$'].sum()
+            
             with c_kpi:
-                total_so = dff['SO_$'].sum()
                 st.markdown(f"<div class='kpi-card' style='height: 300px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+            
             with c_chart:
                 chart_data = dff.copy()
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_walmart_category)
@@ -636,17 +692,28 @@ def view_walmart(df_w):
                 total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
-                    domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI"]
-                    range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39"]
-                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SO_$", type="quantitative", stack=True)).properties(height=300)
+                    domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI", "BORGES"]
+                    range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39", "#FF0000"]
+                    
+                    base = alt.Chart(pie_df).encode(
+                        theta=alt.Theta(field="SO_$", type="quantitative", stack=True)
+                    ).properties(height=300)
+                    
                     pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
                         color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
                         order=alt.Order("SO_$", sort="descending"),
                         tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f')]
                     )
+                    
+                    # Mostrar etiquetas solo si superan el 2% DEL TOTAL, PERO SIEMPRE MOSTRAR BORGES
                     text = base.mark_text(radius=130, fontSize=11).encode(
                         text=alt.Text("label_text:N"), order=alt.Order("SO_$", sort="descending"), color=alt.value("black")
-                    ).transform_calculate(label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')").transform_filter(alt.datum['SO_$'] > (total_pie * 0.02))
+                    ).transform_calculate(
+                        label_text="datum.Category + ': $' + format(datum['SO_$'], ',.0f')"
+                    ).transform_filter(
+                        (alt.datum['SO_$'] > (total_pie * 0.02)) | (alt.datum['Category'] == 'BORGES')
+                    )
+                    
                     st.altair_chart(pie + text, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
@@ -720,10 +787,10 @@ def view_chedraui(df_c):
             with c1:
                 fil_no = st.multiselect("No Tienda", sorted(df_c["NO_TIENDA"].astype(str).unique()))
                 fil_ti = st.multiselect("Tienda", sorted(df_c["TIENDA"].astype(str).unique()))
+                fil_cat = st.multiselect("Categoría", sorted(df_c["CATEGORIA"].astype(str).unique()))
             with c2:
                 fil_ed = st.multiselect("Estado", sorted(df_c["ESTADO"].astype(str).unique()))
                 fil_art = st.multiselect("Artículo", sorted(df_c["ARTICULO"].astype(str).unique()))
-                fil_cat = st.multiselect("Categoría", sorted(df_c["CATEGORIA"].astype(str).unique()))
 
         dff_base = apply_filters(df_c, ["NO_TIENDA", "TIENDA", "ESTADO", "CATEGORIA"], [fil_no, fil_ti, fil_ed, fil_cat])
         dff = apply_filters(dff_base, ["ARTICULO"], [fil_art])
@@ -745,7 +812,10 @@ def view_chedraui(df_c):
             k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
             k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
             k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
-            st.dataframe(dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            
+            disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
+            disp.columns = ['NO_TIENDA', 'TIENDA', 'ARTICULO', 'INV_ULT_SEM', 'VTA_PROM_DIARIA', 'DIAS_INV', 'SELL_OUT']
+            st.dataframe(disp.style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
             
         else:
             def get_chedraui_category(desc):
@@ -792,7 +862,9 @@ def view_chedraui(df_c):
             if st.session_state.c_under_10: dff = dff[dff["DIAS_INV"] < 10]; view_mode = "Menor a 10 Días"
             
             st.caption(f"📋 Vista: {view_mode or 'Completa'}")
-            st.dataframe(dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
+            disp.columns = ['NO_TIENDA', 'TIENDA', 'ARTICULO', 'INV_ULT_SEM', 'VTA_PROM_DIARIA', 'DIAS_INV', 'SELL_OUT']
+            st.dataframe(disp.style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
 
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
