@@ -1,3 +1,17 @@
+# --- 0. AUTO-INSTALADOR FORZADO PARA LA NUBE ---
+import os
+import sys
+import subprocess
+
+try:
+    from pandasai import SmartDatalake
+    from pandasai.llm import GoogleGemini
+except ImportError:
+    # Si la nube no tiene la librería, la obligamos a instalarla en este instante
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "pandasai", "google-generativeai", "plotly"])
+    from pandasai import SmartDatalake
+    from pandasai.llm import GoogleGemini
+
 import streamlit as st
 import pandas as pd
 import time
@@ -5,11 +19,6 @@ import urllib.parse
 import requests 
 import plotly.express as px 
 from io import BytesIO 
-import os
-
-# --- LIBRERÍAS DE IA ---
-from pandasai import SmartDatalake
-from pandasai.llm import GoogleGemini
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -375,6 +384,7 @@ def view_soriana(df_s):
             st.dataframe(disp_sor_dias.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_sor_dias))
             
         else:
+            # --- VISTA PRINCIPAL SORIANA: SELL OUT ---
             def get_soriana_category(desc):
                 desc = str(desc).upper().replace(" ", "")
                 if "SABROSANO" in desc: return "SABROSANO"
@@ -429,8 +439,10 @@ def view_soriana(df_s):
             whatsapp_report("SORIANA Reporte", disp)
             st.dataframe(disp.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
+        # --- RANKING SORIANA ---
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
+        
         s_mod1, s_mod2 = st.columns(2)
         with s_mod1: sel_s_rank_st = st.multiselect("Estado (Ranking)", sorted(df_s["ESTADO"].astype(str).unique()), key="s_rnk_st")
         with s_mod2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].astype(str).unique()), key="s_rnk_fmt")
@@ -457,9 +469,28 @@ def view_soriana(df_s):
             
         dff_s_rank = apply_filters(df_s, ["ESTADO", "FORMATO"], [sel_s_rank_st, sel_s_rank_fmt])
 
-        list_s_gen = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE COMESTIBLE GRAN TRADICION 900 ML", "ACEITE COMESTIBLE SABROSANO +30 850 ML", "ACEITE OLIVA OLI PURO SPRAY 145 ML", "JUSTO 850 ML", "ACEITE COMESTIBLE AEROSOL 170GR", "ACEITE COMESTIBLE AVE 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML", "ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML", "ACEITE COMESTIBLE NUTRIOLI DHA 850 ML", "ACEITE COMESTIBLE SABROSANO 850 ML", "SABROSANO RINDE+ 850 ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE COMESTIBLE GRAN TRADICION 800 ML", "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "VINAGRE BALSAMICO 250ML", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML", "ACEITE NUTRIOLI PROTECT MENTE 850 ML", "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"]
-        list_s_pas = ["PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"]
-        list_s_oli = ["ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE OLIVA OLI PURO SPRAY 145 ML"]
+        list_s_gen = [
+            "ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE COMESTIBLE GRAN TRADICION 900 ML", "ACEITE COMESTIBLE SABROSANO +30 850 ML", 
+            "ACEITE OLIVA OLI PURO SPRAY 145 ML", "JUSTO 850 ML", "ACEITE COMESTIBLE AEROSOL 170GR", "ACEITE COMESTIBLE AVE 850 ML", 
+            "ACEITE COMESTIBLE NUTRIOLI 400 ML", "ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML", "ACEITE COMESTIBLE NUTRIOLI DHA 850 ML", 
+            "ACEITE COMESTIBLE SABROSANO 850 ML", "SABROSANO RINDE+ 850 ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", 
+            "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", 
+            "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE COMESTIBLE GRAN TRADICION 800 ML", 
+            "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "VINAGRE BALSAMICO 250ML", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML", 
+            "ACEITE NUTRIOLI PROTECT MENTE 850 ML", "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", 
+            "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", 
+            "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"
+        ]
+        list_s_pas = [
+            "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", 
+            "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", 
+            "PASTA CODO NUTRIOLI 200GR"
+        ]
+        list_s_oli = [
+            "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", 
+            "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", 
+            "ADEREZO OLI 500 ML BOT", "ACEITE OLIVA OLI PURO SPRAY 145 ML"
+        ]
         list_s_nut = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML"]
 
         target_list_s = []
@@ -472,6 +503,7 @@ def view_soriana(df_s):
         if target_list_s:
             dff_s_rank['DESC_CLEAN'] = dff_s_rank['DESCRIPCION'].astype(str).str.strip()
             target_list_s_clean = [t.strip() for t in target_list_s]
+            
             dff_sub = dff_s_rank[dff_s_rank["DESC_CLEAN"].isin(target_list_s_clean)]
             if not dff_sub.empty:
                 final_s_rank = dff_sub.groupby(["NO_TIENDA", "TIENDA"])['SO_$'].sum().reset_index()
@@ -557,6 +589,7 @@ def view_walmart(df_w):
 
         def get_walmart_category(desc):
             desc_clean = str(desc).upper().replace(" ", "").replace("&NBSP;", "")
+            
             if any(b in desc_clean for b in borges_clean): return "BORGES"
             if "NUTRIOLI" in desc_clean and "946" in desc_clean: return "NUTRIOLI"
             if "SABROSANO" in desc_clean: return "SABROSANO"
@@ -652,6 +685,7 @@ def view_walmart(df_w):
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
                     )
+                    
                     fig.update_layout(
                         showlegend=False, 
                         margin=dict(t=20, b=20, l=40, r=40), 
@@ -866,7 +900,6 @@ def view_chedraui(df_c):
 # --- VISTA CHATBOT ---
 def view_chatbot():
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['CHATBOT']}'>🤖 ASISTENTE IA MÚLTIPLE</div>", unsafe_allow_html=True)
-    
     st.info("💡 Obtén respuestas rápidas haciendo preguntas naturales sobre tus 3 bases de datos (Soriana, Walmart y Chedraui).")
     
     api_key = st.text_input("🔑 Ingresa tu API Key de Google Gemini (Gratuita):", type="password")
@@ -904,12 +937,10 @@ def view_chatbot():
         
     st.caption(f"📚 Bases disponibles para tu consulta: **{', '.join(nombres)}**")
     
-    # Motor de IA
     os.environ["GEMINI_API_KEY"] = api_key
     llm = GoogleGemini(api_key=api_key)
     dl = SmartDatalake(dfs, config={"llm": llm, "verbose": False})
     
-    # Sistema de Chat en Pantalla
     if "messages" not in st.session_state:
         st.session_state.messages = [{"role": "assistant", "content": "¡Hola! Soy tu asistente de análisis de Retail. ¿Qué te gustaría saber hoy? (Ej. ¿Cuál es el producto con más días de inventario en Walmart?)"}]
         
@@ -924,7 +955,6 @@ def view_chatbot():
             with st.spinner("🧠 Pensando y analizando miles de filas..."):
                 try:
                     respuesta = dl.chat(prompt + " (Responde en español de forma concisa y amigable)")
-                    
                     if isinstance(respuesta, pd.DataFrame):
                         st.dataframe(respuesta, use_container_width=True)
                         st.session_state.messages.append({"role": "assistant", "content": "Aquí tienes la tabla que me pediste. Si cierras la app se borrará, te sugiero tomar nota."})
@@ -932,7 +962,7 @@ def view_chatbot():
                         st.write(respuesta)
                         st.session_state.messages.append({"role": "assistant", "content": str(respuesta)})
                 except Exception as e:
-                    error_msg = f"Lo siento, hubo un error al procesar tu pregunta. A veces la IA se confunde con los nombres exactos de las columnas. Intenta preguntarlo de otra forma."
+                    error_msg = f"Lo siento, hubo un error al procesar tu pregunta. Intenta preguntarlo de otra forma."
                     st.error(error_msg)
                     st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
