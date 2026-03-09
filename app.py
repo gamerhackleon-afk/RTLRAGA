@@ -52,6 +52,9 @@ if 'active_retailer' not in st.session_state:
 if 'confirm_reset' not in st.session_state:
     st.session_state.confirm_reset = False
 
+if 'api_key_gemini' not in st.session_state:
+    st.session_state.api_key_gemini = ""
+
 # --- 3. FUNCIONES UTILITARIAS Y DE CONTROL ---
 
 def safe_mean(series):
@@ -257,7 +260,7 @@ with col4: st.button("🤖 IA", on_click=set_retailer, args=("CHATBOT",), use_co
 
 st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
-# --- 7. HEADER GLOBAL (Se oculta en Chatbot para vista inmersiva) ---
+# --- 7. HEADER GLOBAL ---
 if st.session_state.active_retailer != 'CHATBOT':
     c_head1, c_head2 = st.columns([1, 5])
     with c_head1:
@@ -410,10 +413,9 @@ def view_soriana(df_s):
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_soriana_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
-                total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
+                    pie_df['Percent'] = (pie_df['SO_$'] / pie_df['SO_$'].sum()) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     color_map = dict(zip(domain, range_))
@@ -422,8 +424,7 @@ def view_soriana(df_s):
                     fig.update_traces(
                         textposition='outside', textinfo='label+percent+value',
                         texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
-                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
-                        textfont_size=11
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
                     fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                     st.plotly_chart(fig, use_container_width=True)
@@ -647,10 +648,9 @@ def view_walmart(df_w):
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_walmart_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
-                total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
+                    pie_df['Percent'] = (pie_df['SO_$'] / pie_df['SO_$'].sum()) * 100
                     domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI", "BORGES"]
                     range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39", "#FF0000"]
                     color_map = dict(zip(domain, range_))
@@ -659,8 +659,7 @@ def view_walmart(df_w):
                     fig.update_traces(
                         textposition='outside', textinfo='label+percent+value',
                         texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
-                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
-                        textfont_size=11
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
                     fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", uniformtext_minsize=8, uniformtext_mode='hide')
                     st.plotly_chart(fig, use_container_width=True)
@@ -789,10 +788,9 @@ def view_chedraui(df_c):
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
                 pie_df = pie_df[pie_df['SELL_OUT'] > 0]
-                total_pie = pie_df['SELL_OUT'].sum()
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SELL_OUT'] / total_pie) * 100
+                    pie_df['Percent'] = (pie_df['SELL_OUT'] / pie_df['SELL_OUT'].sum()) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     color_map = dict(zip(domain, range_))
@@ -801,8 +799,7 @@ def view_chedraui(df_c):
                     fig.update_traces(
                         textposition='outside', textinfo='label+percent+value',
                         texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
-                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
-                        textfont_size=11
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
                     fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                     st.plotly_chart(fig, use_container_width=True)
@@ -894,7 +891,10 @@ def view_chatbot():
         return
     
     os.environ["GEMINI_API_KEY"] = API_KEY
-    llm = GoogleGemini(api_key=API_KEY, model="gemini-1.5-flash")
+    # Aquí forzamos de dos maneras diferentes a la librería para que no use el modelo viejo
+    llm = GoogleGemini(api_key=API_KEY, model="models/gemini-1.5-flash")
+    llm.model = "models/gemini-1.5-flash" 
+    
     dl = SmartDatalake(dfs, config={"llm": llm, "verbose": False})
     
     if "messages" not in st.session_state:
