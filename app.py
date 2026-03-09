@@ -1,17 +1,3 @@
-# --- 0. AUTO-INSTALADOR FORZADO PARA LA NUBE ---
-import os
-import sys
-import subprocess
-
-try:
-    from pandasai import SmartDatalake
-    from pandasai.llm import GoogleGemini
-except ImportError:
-    # Si la nube no tiene la librería, la obligamos a instalarla en este instante
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pandasai", "google-generativeai", "plotly"])
-    from pandasai import SmartDatalake
-    from pandasai.llm import GoogleGemini
-
 import streamlit as st
 import pandas as pd
 import time
@@ -19,6 +5,11 @@ import urllib.parse
 import requests 
 import plotly.express as px 
 from io import BytesIO 
+import os
+
+# --- LIBRERÍAS DE IA ---
+from pandasai import SmartDatalake
+from pandasai.llm import GoogleGemini
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -31,11 +22,12 @@ st.set_page_config(
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
 CACHE_CONFIG = {'ttl': 3600, 'max_entries': 10, 'show_spinner': False}
 
-# URLs de Datos
+# URLs de Datos (Incluyendo FRESKO para el Chatbot)
 URLS_DB = {
     "SORIANA": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/SORIANA.xlsx",
     "WALMART": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/WALMART.xlsx",
-    "CHEDRAUI": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/CHEDRAUI.xlsx"
+    "CHEDRAUI": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/CHEDRAUI.xlsx",
+    "FRESKO": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/fresko.xlsx"
 }
 
 # Colores por retailer
@@ -204,6 +196,15 @@ def load_che(path):
         return optimize_floats(df)
     except Exception: return None
 
+@st.cache_data(**CACHE_CONFIG)
+def load_fre(path):
+    try:
+        source = download_file(path)
+        if source is None: return None
+        df = pd.read_excel(source, engine='openpyxl')
+        return optimize_floats(df)
+    except Exception: return None
+
 # --- 5. CSS AVANZADO RESPONSIVO ---
 act = st.session_state.active_retailer
 style_on = "opacity: 1 !important; border: 3px solid #ffffff !important; transform: scale(1.02) !important; box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important; z-index: 10 !important;"
@@ -222,10 +223,10 @@ html, body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; }}
 .kpi-value {{ font-size: 2rem; font-weight: 800; margin-top: 5px; word-break: break-word; }}
 .retailer-header {{ font-size: 1.2rem; font-weight: 800; color: white; padding: 10px 15px; border-radius: 8px; margin: 15px 0; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-shadow: 0 1px 2px rgba(0,0,0,0.2); }}
 div[data-testid="stHorizontalBlock"] button {{ border-radius: 10px !important; font-weight: 700 !important; text-transform: uppercase; transition: all 0.15s ease-in-out !important; border: none !important; }}
-div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important; {css_styles['SORIANA']} }}
-div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important; {css_styles['WALMART']} }}
-div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(3) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
-div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(4) button {{ background: linear-gradient(135deg, #4b5563, #343a40) !important; color: white !important; {css_styles['CHATBOT']} }}
+div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important; {css_styles['SORIANA']} }}
+div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important; {css_styles['WALMART']} }}
+div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(3) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
+div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(4) button {{ background: linear-gradient(135deg, #4b5563, #343a40) !important; color: white !important; {css_styles['CHATBOT']} }}
 .btn-ranking-blue {{ background-color: #0071DC !important; color: white !important; border: 2px solid white !important; }}
 .btn-ranking-orange {{ background-color: #FF8C00 !important; color: white !important; border: 2px solid white !important; }}
 .btn-ranking-olive {{ background-color: #808000 !important; color: white !important; border: 2px solid white !important; }}
@@ -247,24 +248,7 @@ div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth
 </style>
 """, unsafe_allow_html=True)
 
-# --- 6. HEADER ---
-c_head1, c_head2 = st.columns([1, 5])
-with c_head1:
-    try: st.image("ragasa_logo.png", use_container_width=True)
-    except: st.write("📦")
-with c_head2:
-    st.markdown("""
-        <div style='display: flex; flex-direction: column; justify-content: center; height: 100%;'>
-            <h2 style='margin:0; font-weight: 800; color: #333;'>RETAIL MANAGER</h2>
-            <p style='margin:0; font-size: 0.9rem; color: #666;'>Control de Inventarios y Ventas</p>
-        </div>
-    """, unsafe_allow_html=True)
-
-status_txt = 'CONECTADO' if st.session_state.is_online else 'OFFLINE'
-status_color = "#28a745" if st.session_state.is_online else "#dc3545"
-st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
-
-# --- 7. NAVEGACIÓN ---
+# --- 6. NAVEGACIÓN PRINCIPAL ---
 col1, col2, col3, col4 = st.columns(4, gap="small")
 with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True, key="nav_sor")
 with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True, key="nav_wal")
@@ -272,6 +256,25 @@ with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_
 with col4: st.button("🤖 IA", on_click=set_retailer, args=("CHATBOT",), use_container_width=True, key="nav_bot")
 
 st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+
+# --- 7. HEADER GLOBAL (Se oculta en Chatbot para vista inmersiva) ---
+if st.session_state.active_retailer != 'CHATBOT':
+    c_head1, c_head2 = st.columns([1, 5])
+    with c_head1:
+        try: st.image("ragasa_logo.png", use_container_width=True)
+        except: st.write("📦")
+    with c_head2:
+        st.markdown("""
+            <div style='display: flex; flex-direction: column; justify-content: center; height: 100%;'>
+                <h2 style='margin:0; font-weight: 800; color: #333;'>RETAIL MANAGER</h2>
+                <p style='margin:0; font-size: 0.9rem; color: #666;'>Control de Inventarios y Ventas</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+    status_txt = 'CONECTADO' if st.session_state.is_online else 'OFFLINE'
+    status_color = "#28a745" if st.session_state.is_online else "#dc3545"
+    st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
+
 
 # --- 8. VISTAS POR RETAILER ---
 
@@ -384,7 +387,6 @@ def view_soriana(df_s):
             st.dataframe(disp_sor_dias.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_sor_dias))
             
         else:
-            # --- VISTA PRINCIPAL SORIANA: SELL OUT ---
             def get_soriana_category(desc):
                 desc = str(desc).upper().replace(" ", "")
                 if "SABROSANO" in desc: return "SABROSANO"
@@ -418,8 +420,7 @@ def view_soriana(df_s):
                     
                     fig = px.pie(pie_df, values='SO_$', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
                     fig.update_traces(
-                        textposition='outside',
-                        textinfo='label+percent+value',
+                        textposition='outside', textinfo='label+percent+value',
                         texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
@@ -439,10 +440,8 @@ def view_soriana(df_s):
             whatsapp_report("SORIANA Reporte", disp)
             st.dataframe(disp.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
-        # --- RANKING SORIANA ---
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
-        
         s_mod1, s_mod2 = st.columns(2)
         with s_mod1: sel_s_rank_st = st.multiselect("Estado (Ranking)", sorted(df_s["ESTADO"].astype(str).unique()), key="s_rnk_st")
         with s_mod2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].astype(str).unique()), key="s_rnk_fmt")
@@ -469,28 +468,9 @@ def view_soriana(df_s):
             
         dff_s_rank = apply_filters(df_s, ["ESTADO", "FORMATO"], [sel_s_rank_st, sel_s_rank_fmt])
 
-        list_s_gen = [
-            "ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE COMESTIBLE GRAN TRADICION 900 ML", "ACEITE COMESTIBLE SABROSANO +30 850 ML", 
-            "ACEITE OLIVA OLI PURO SPRAY 145 ML", "JUSTO 850 ML", "ACEITE COMESTIBLE AEROSOL 170GR", "ACEITE COMESTIBLE AVE 850 ML", 
-            "ACEITE COMESTIBLE NUTRIOLI 400 ML", "ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML", "ACEITE COMESTIBLE NUTRIOLI DHA 850 ML", 
-            "ACEITE COMESTIBLE SABROSANO 850 ML", "SABROSANO RINDE+ 850 ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", 
-            "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", 
-            "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE COMESTIBLE GRAN TRADICION 800 ML", 
-            "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "VINAGRE BALSAMICO 250ML", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML", 
-            "ACEITE NUTRIOLI PROTECT MENTE 850 ML", "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", 
-            "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", 
-            "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"
-        ]
-        list_s_pas = [
-            "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", 
-            "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", 
-            "PASTA CODO NUTRIOLI 200GR"
-        ]
-        list_s_oli = [
-            "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", 
-            "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", 
-            "ADEREZO OLI 500 ML BOT", "ACEITE OLIVA OLI PURO SPRAY 145 ML"
-        ]
+        list_s_gen = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE COMESTIBLE GRAN TRADICION 900 ML", "ACEITE COMESTIBLE SABROSANO +30 850 ML", "ACEITE OLIVA OLI PURO SPRAY 145 ML", "JUSTO 850 ML", "ACEITE COMESTIBLE AEROSOL 170GR", "ACEITE COMESTIBLE AVE 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML", "ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML", "ACEITE COMESTIBLE NUTRIOLI DHA 850 ML", "ACEITE COMESTIBLE SABROSANO 850 ML", "SABROSANO RINDE+ 850 ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE COMESTIBLE GRAN TRADICION 800 ML", "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "VINAGRE BALSAMICO 250ML", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML", "ACEITE NUTRIOLI PROTECT MENTE 850 ML", "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"]
+        list_s_pas = ["PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"]
+        list_s_oli = ["ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE OLIVA OLI PURO SPRAY 145 ML"]
         list_s_nut = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML"]
 
         target_list_s = []
@@ -503,7 +483,6 @@ def view_soriana(df_s):
         if target_list_s:
             dff_s_rank['DESC_CLEAN'] = dff_s_rank['DESCRIPCION'].astype(str).str.strip()
             target_list_s_clean = [t.strip() for t in target_list_s]
-            
             dff_sub = dff_s_rank[dff_s_rank["DESC_CLEAN"].isin(target_list_s_clean)]
             if not dff_sub.empty:
                 final_s_rank = dff_sub.groupby(["NO_TIENDA", "TIENDA"])['SO_$'].sum().reset_index()
@@ -589,7 +568,6 @@ def view_walmart(df_w):
 
         def get_walmart_category(desc):
             desc_clean = str(desc).upper().replace(" ", "").replace("&NBSP;", "")
-            
             if any(b in desc_clean for b in borges_clean): return "BORGES"
             if "NUTRIOLI" in desc_clean and "946" in desc_clean: return "NUTRIOLI"
             if "SABROSANO" in desc_clean: return "SABROSANO"
@@ -679,22 +657,12 @@ def view_walmart(df_w):
                     
                     fig = px.pie(pie_df, values='SO_$', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
                     fig.update_traces(
-                        textposition='outside',
-                        textinfo='label+percent+value',
+                        textposition='outside', textinfo='label+percent+value',
                         texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
                     )
-                    
-                    fig.update_layout(
-                        showlegend=False, 
-                        margin=dict(t=20, b=20, l=40, r=40), 
-                        height=350, 
-                        paper_bgcolor="rgba(0,0,0,0)", 
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        uniformtext_minsize=8,
-                        uniformtext_mode='hide'
-                    )
+                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", uniformtext_minsize=8, uniformtext_mode='hide')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
@@ -831,8 +799,7 @@ def view_chedraui(df_c):
                     
                     fig = px.pie(pie_df, values='SELL_OUT', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
                     fig.update_traces(
-                        textposition='outside',
-                        textinfo='label+percent+value',
+                        textposition='outside', textinfo='label+percent+value',
                         texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
@@ -897,52 +864,41 @@ def view_chedraui(df_c):
                 st.dataframe(final_c_rank.sort_values(by=rank_title, ascending=False).style.format({rank_title: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
-# --- VISTA CHATBOT ---
+# --- VISTA CHATBOT (LIMPIA E INMERSIVA) ---
 def view_chatbot():
-    st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['CHATBOT']}'>🤖 ASISTENTE IA MÚLTIPLE</div>", unsafe_allow_html=True)
-    st.info("💡 Obtén respuestas rápidas haciendo preguntas naturales sobre tus 3 bases de datos (Soriana, Walmart y Chedraui).")
+    # Clave API registrada por defecto
+    API_KEY = "AIzaSyBYAp9MJ1zjkLGbJRy0fMUAIiXV8R1WbIE"
     
-    api_key = st.text_input("🔑 Ingresa tu API Key de Google Gemini (Gratuita):", type="password")
-    
-    if not api_key:
-        st.warning("☝️ Necesitas ingresar tu API Key para activar la inteligencia artificial.")
-        st.markdown("[¿No tienes una? Haz clic aquí para obtenerla gratis](https://aistudio.google.com/)")
-        return
-
-    st.success("✅ Sistema listo. Analizando conexiones en segundo plano...")
-    
-    with st.spinner("Conectando bases de datos..."):
+    with st.spinner("Sincronizando datos para la IA..."):
         df_s = get_data("SORIANA", "up_s_bot", load_sor)
         df_w = get_data("WALMART", "up_w_bot", load_wal)
         df_c = get_data("CHEDRAUI", "up_c_bot", load_che)
+        df_f = get_data("FRESKO", "up_f_bot", load_fre)
         
     dfs = []
-    nombres = []
     if df_s is not None: 
         df_s.name = "Soriana"
         dfs.append(df_s)
-        nombres.append("Soriana")
     if df_w is not None: 
         df_w.name = "Walmart"
         dfs.append(df_w)
-        nombres.append("Walmart")
     if df_c is not None: 
         df_c.name = "Chedraui"
         dfs.append(df_c)
-        nombres.append("Chedraui")
+    if df_f is not None: 
+        df_f.name = "Fresko"
+        dfs.append(df_f)
         
     if not dfs:
-        st.error("❌ No se pudieron cargar las bases de datos. Revisa la conexión.")
+        st.error("No se pudieron cargar las bases de datos.")
         return
-        
-    st.caption(f"📚 Bases disponibles para tu consulta: **{', '.join(nombres)}**")
     
-    os.environ["GEMINI_API_KEY"] = api_key
-    llm = GoogleGemini(api_key=api_key)
+    os.environ["GEMINI_API_KEY"] = API_KEY
+    llm = GoogleGemini(api_key=API_KEY)
     dl = SmartDatalake(dfs, config={"llm": llm, "verbose": False})
     
     if "messages" not in st.session_state:
-        st.session_state.messages = [{"role": "assistant", "content": "¡Hola! Soy tu asistente de análisis de Retail. ¿Qué te gustaría saber hoy? (Ej. ¿Cuál es el producto con más días de inventario en Walmart?)"}]
+        st.session_state.messages = [{"role": "assistant", "content": "¡Hola! Estoy conectado a las bases de datos de Soriana, Walmart, Chedraui y Fresko. ¿Qué te gustaría consultar hoy?"}]
         
     for msg in st.session_state.messages:
         st.chat_message(msg["role"]).write(msg["content"])
@@ -952,17 +908,17 @@ def view_chatbot():
         st.chat_message("user").write(prompt)
         
         with st.chat_message("assistant"):
-            with st.spinner("🧠 Pensando y analizando miles de filas..."):
+            with st.spinner("🧠 Pensando y analizando..."):
                 try:
-                    respuesta = dl.chat(prompt + " (Responde en español de forma concisa y amigable)")
+                    respuesta = dl.chat(prompt + " (Responde en español de forma concisa y amigable. Si el usuario pide formato de tabla, devuélvelo en un DataFrame)")
                     if isinstance(respuesta, pd.DataFrame):
                         st.dataframe(respuesta, use_container_width=True)
-                        st.session_state.messages.append({"role": "assistant", "content": "Aquí tienes la tabla que me pediste. Si cierras la app se borrará, te sugiero tomar nota."})
+                        st.session_state.messages.append({"role": "assistant", "content": "Aquí tienes la tabla que solicitaste."})
                     else:
                         st.write(respuesta)
                         st.session_state.messages.append({"role": "assistant", "content": str(respuesta)})
                 except Exception as e:
-                    error_msg = f"Lo siento, hubo un error al procesar tu pregunta. Intenta preguntarlo de otra forma."
+                    error_msg = "Lo siento, tuve un problema al cruzar esos datos. Intenta hacer la pregunta con otras palabras o especificando mejor los nombres de las columnas."
                     st.error(error_msg)
                     st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
