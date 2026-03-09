@@ -28,8 +28,7 @@ URLS_DB = {
 RETAILER_COLORS = {
     "SORIANA": "#D32F2F",
     "WALMART": "#0071DC", 
-    "CHEDRAUI": "#FF6600",
-    "FRESKO": "#CCFF00"
+    "CHEDRAUI": "#FF6600"
 }
 
 # Inicialización de estado
@@ -63,6 +62,11 @@ def get_kpi_mean(df, desc_col, days_col, pattern):
     clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
     mask = clean_desc.str.contains(clean_pattern, case=False, na=False)
     return safe_mean(df.loc[mask, days_col])
+
+# FUNCIÓN AUTO-SIZE PARA TABLAS
+def auto_height(df):
+    """Calcula la altura perfecta para la tabla basada en sus filas, evita el doble scroll"""
+    return min(max(len(df) * 35 + 45, 100), 600)
 
 def whatsapp_report(title, data, max_rows=40):
     msg = [f"*{title} ({len(data)})*"]
@@ -216,16 +220,12 @@ def load_che(path):
     except Exception as e: 
         return None
 
-@st.cache_data(**CACHE_CONFIG)
-def load_fre(file):
-    return pd.read_excel(file, engine='openpyxl')
-
 # --- 5. CSS AVANZADO RESPONSIVO ---
 act = st.session_state.active_retailer
 style_on = "opacity: 1 !important; border: 3px solid #ffffff !important; transform: scale(1.02) !important; box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important; z-index: 10 !important;"
 style_off = "opacity: 0.6 !important; transform: scale(0.98) !important; filter: grayscale(40%) !important; border: 1px solid transparent !important;"
 
-css_styles = {k: style_on if act == k else style_off for k in ['SORIANA', 'WALMART', 'CHEDRAUI', 'FRESKO']}
+css_styles = {k: style_on if act == k else style_off for k in ['SORIANA', 'WALMART', 'CHEDRAUI']}
 
 st.markdown(f"""
 <style>
@@ -240,8 +240,7 @@ html, body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; }}
 div[data-testid="stHorizontalBlock"] button {{ border-radius: 10px !important; font-weight: 700 !important; text-transform: uppercase; transition: all 0.15s ease-in-out !important; border: none !important; }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important; {css_styles['SORIANA']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important; {css_styles['WALMART']} }}
-div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
-div[data-testid="stHorizontalBlock"]:nth-of-type(3) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #CCFF00, #AACC00) !important; color: #444 !important; {css_styles['FRESKO']} }}
+div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(3) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
 .btn-ranking-blue {{ background-color: #0071DC !important; color: white !important; border: 2px solid white !important; }}
 .btn-ranking-orange {{ background-color: #FF8C00 !important; color: white !important; border: 2px solid white !important; }}
 .btn-ranking-olive {{ background-color: #808000 !important; color: white !important; border: 2px solid white !important; }}
@@ -281,13 +280,10 @@ status_color = "#28a745" if st.session_state.is_online else "#dc3545"
 st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
-col1, col2 = st.columns(2, gap="small")
+col1, col2, col3 = st.columns(3, gap="small")
 with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True, key="nav_sor")
 with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True, key="nav_wal")
-
-col3, col4 = st.columns(2, gap="small")
 with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True, key="nav_che")
-with col4: st.button("FRESKO", on_click=set_retailer, args=("FRESKO",), use_container_width=True, key="nav_fre")
 
 st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
@@ -384,7 +380,9 @@ def view_soriana(df_s):
                     res_rows.append({"CODIGO": code, "ARTICULO": item, "DIAS INV": avg_days})
                 else:
                     res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV": 0})
-            st.dataframe(pd.DataFrame(res_rows).style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
+            
+            df_prod_summary = pd.DataFrame(res_rows)
+            st.dataframe(df_prod_summary.style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
 
         elif st.session_state.s_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -400,9 +398,10 @@ def view_soriana(df_s):
             
             disp_sor_dias = dff[["NO_TIENDA", "TIENDA", "CODIGO", "DESCRIPCION", "INV_CAJAS", "SO_$", "SO_4SEM", "DIAS_INV"]].copy()
             disp_sor_dias.columns = ['No.', 'TIENDA', 'CODIGO', 'ARTICULO', 'INV CAJAS', 'SELL OUT SEM', 'SELL OUT ULT 4 SEM', 'DIAS INV']
-            st.dataframe(disp_sor_dias.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
+            st.dataframe(disp_sor_dias.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_sor_dias))
             
         else:
+            # --- VISTA PRINCIPAL SORIANA: SELL OUT ---
             def get_soriana_category(desc):
                 desc = str(desc).upper().replace(" ", "")
                 if "SABROSANO" in desc: return "SABROSANO"
@@ -426,8 +425,10 @@ def view_soriana(df_s):
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_soriana_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
+                total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
+                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     color_map = dict(zip(domain, range_))
@@ -437,7 +438,8 @@ def view_soriana(df_s):
                         textposition='outside',
                         textinfo='label+percent+value',
                         texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
-                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
+                        textfont_size=11
                     )
                     fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
                     st.plotly_chart(fig, use_container_width=True)
@@ -452,8 +454,9 @@ def view_soriana(df_s):
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM', ascending=False)
             
             whatsapp_report("SORIANA Reporte", disp)
-            st.dataframe(disp.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True)
+            st.dataframe(disp.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
+        # --- RANKING SORIANA ---
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         
@@ -522,7 +525,7 @@ def view_soriana(df_s):
             if not dff_sub.empty:
                 final_s_rank = dff_sub.groupby(["NO_TIENDA", "TIENDA"])['SO_$'].sum().reset_index()
                 final_s_rank.columns = ['No Tienda', 'TIENDA', rank_title_s]
-                st.dataframe(final_s_rank.sort_values(by=rank_title_s, ascending=False).style.format({rank_title_s: "${:,.2f}"}), use_container_width=True, hide_index=True)
+                st.dataframe(final_s_rank.sort_values(by=rank_title_s, ascending=False).style.format({rank_title_s: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_s_rank))
             else:
                 st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
@@ -605,9 +608,7 @@ def view_walmart(df_w):
             desc_clean = str(desc).upper().replace(" ", "").replace("&NBSP;", "")
             
             if any(b in desc_clean for b in borges_clean): return "BORGES"
-            
             if "NUTRIOLI" in desc_clean and "946" in desc_clean: return "NUTRIOLI"
-            
             if "SABROSANO" in desc_clean: return "SABROSANO"
             if "GRANTRADICION" in desc_clean: return "GT"
             if "BALSAMICO" in desc_clean: return "BALSAMICO"
@@ -654,7 +655,7 @@ def view_walmart(df_w):
                     res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS DE INV": 0, "SELL OUT": 0})
             
             df_prod_summary = pd.DataFrame(res_rows)
-            st.dataframe(df_prod_summary.style.format({'DIAS DE INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            st.dataframe(df_prod_summary.style.format({'DIAS DE INV': "{:,.1f}", 'SELL OUT': "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
 
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -669,7 +670,9 @@ def view_walmart(df_w):
             m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             m4.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
             
-            st.dataframe(dff[["TIENDA", "CODIGO", "DESCRIPCION", "DIAS_INV"]].rename(columns={"DIAS_INV":"DIAS INVENTARIO"}).style.format({'DIAS INVENTARIO': "{:,.1f}"}), use_container_width=True, hide_index=True)
+            disp_w_dias = dff[["TIENDA", "CODIGO", "DESCRIPCION", "DIAS_INV"]].copy()
+            disp_w_dias.columns = ["TIENDA", "CODIGO", "DESCRIPCION", "DIAS INVENTARIO"]
+            st.dataframe(disp_w_dias.style.format({'DIAS INVENTARIO': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_w_dias))
             
         else:
             c_kpi, c_chart = st.columns([1, 2])
@@ -693,18 +696,27 @@ def view_walmart(df_w):
                     fig.update_traces(
                         textposition='outside',
                         textinfo='label+percent+value',
-                        texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
+                        texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
                     )
-                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    
+                    fig.update_layout(
+                        showlegend=False, 
+                        margin=dict(t=20, b=20, l=40, r=40), 
+                        height=350, 
+                        paper_bgcolor="rgba(0,0,0,0)", 
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        uniformtext_minsize=8,
+                        uniformtext_mode='hide'
+                    )
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
             disp = dff[["CODIGO", "DESCRIPCION", "TIENDA", "EXISTENCIA", "SO_$", "PROM_PZS_MENSUAL"]].copy()
             disp.columns = ['CODIGO', 'DESCRIPCION', 'TIENDA', 'EXISTENCIA', 'SELL OUT', 'PROM PZS MENSUAL']
             whatsapp_report("WALMART Reporte", disp)
-            st.dataframe(disp.style.format({'SELL OUT': '${:,.2f}', 'PROM PZS MENSUAL': '{:,.2f}'}), use_container_width=True, hide_index=True)
+            st.dataframe(disp.style.format({'SELL OUT': '${:,.2f}', 'PROM PZS MENSUAL': '{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -746,7 +758,7 @@ def view_walmart(df_w):
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA NUTRIOLI ($)'}).sort_values(by='VENTA NUTRIOLI ($)', ascending=False).head(10)
         
         if final_rank is not None:
-            st.dataframe(final_rank.sort_values(by=final_rank.columns[1], ascending=False).style.format({final_rank.columns[1]: "${:,.2f}"}), use_container_width=True, hide_index=True)
+            st.dataframe(final_rank.sort_values(by=final_rank.columns[1], ascending=False).style.format({final_rank.columns[1]: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_rank))
 
 def view_chedraui(df_c):
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
@@ -799,7 +811,7 @@ def view_chedraui(df_c):
             
             disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
             disp.columns = ['NO_TIENDA', 'TIENDA', 'ARTICULO', 'INV_ULT_SEM', 'VTA_PROM_DIARIA', 'DIAS_INV', 'SELL_OUT']
-            st.dataframe(disp.style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            st.dataframe(disp.style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
             
         else:
             def get_chedraui_category(desc):
@@ -824,6 +836,7 @@ def view_chedraui(df_c):
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
                 pie_df = pie_df[pie_df['SELL_OUT'] > 0]
+                total_pie = pie_df['SELL_OUT'].sum()
                 
                 if not pie_df.empty:
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
@@ -834,7 +847,7 @@ def view_chedraui(df_c):
                     fig.update_traces(
                         textposition='outside',
                         textinfo='label+percent+value',
-                        texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
+                        texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
                     )
@@ -849,7 +862,7 @@ def view_chedraui(df_c):
             st.caption(f"📋 Vista: {view_mode or 'Completa'}")
             disp = dff[["NO_TIENDA", "TIENDA", "ARTICULO", "INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]].copy()
             disp.columns = ['NO_TIENDA', 'TIENDA', 'ARTICULO', 'INV_ULT_SEM', 'VTA_PROM_DIARIA', 'DIAS_INV', 'SELL_OUT']
-            st.dataframe(disp.style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True)
+            st.dataframe(disp.style.format({'INV_ULT_SEM': "{:,.0f}", 'VTA_PROM_DIARIA': "{:,.2f}", 'DIAS_INV': "{:,.1f}", 'SELL_OUT': "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -895,15 +908,8 @@ def view_chedraui(df_c):
             if not dff_rank.empty:
                 final_c_rank = dff_rank.groupby(["NO_TIENDA", "TIENDA"])['SELL_OUT'].sum().reset_index()
                 final_c_rank.columns = ['No Tienda', 'TIENDA', rank_title]
-                st.dataframe(final_c_rank.sort_values(by=rank_title, ascending=False).style.format({rank_title: "${:,.2f}"}), use_container_width=True, hide_index=True)
+                st.dataframe(final_c_rank.sort_values(by=rank_title, ascending=False).style.format({rank_title: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
-
-def view_fresko():
-    st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['FRESKO']}; color: #444;'>FRESKO</div>", unsafe_allow_html=True)
-    f_fre = st.file_uploader("📂 Cargar Excel FRESKO", type=["xlsx"], key="up_fre")
-    if f_fre:
-        df_fre = load_fre(f_fre)
-        st.dataframe(df_fre, use_container_width=True)
 
 # --- 9. EJECUTAR VISTA ACTIVA ---
 if st.session_state.active_retailer == 'SORIANA':
@@ -917,9 +923,6 @@ elif st.session_state.active_retailer == 'WALMART':
 elif st.session_state.active_retailer == 'CHEDRAUI':
     df_c = get_data("CHEDRAUI", "up_c", load_che)
     if df_c is not None: view_chedraui(df_c)
-
-elif st.session_state.active_retailer == 'FRESKO':
-    view_fresko()
 
 # --- 10. PIE DE PÁGINA ---
 st.divider()
