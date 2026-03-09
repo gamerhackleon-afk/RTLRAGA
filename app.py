@@ -5,6 +5,11 @@ import urllib.parse
 import requests 
 import plotly.express as px 
 from io import BytesIO 
+import os
+
+# --- LIBRERÍAS DE IA ---
+from pandasai import SmartDatalake
+from pandasai.llm import GoogleGemini
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -28,7 +33,8 @@ URLS_DB = {
 RETAILER_COLORS = {
     "SORIANA": "#D32F2F",
     "WALMART": "#0071DC", 
-    "CHEDRAUI": "#FF6600"
+    "CHEDRAUI": "#FF6600",
+    "CHATBOT": "#6c757d"
 }
 
 # Inicialización de estado
@@ -63,9 +69,7 @@ def get_kpi_mean(df, desc_col, days_col, pattern):
     mask = clean_desc.str.contains(clean_pattern, case=False, na=False)
     return safe_mean(df.loc[mask, days_col])
 
-# FUNCIÓN AUTO-SIZE PARA TABLAS
 def auto_height(df):
-    """Calcula la altura perfecta para la tabla basada en sus filas, evita el doble scroll"""
     return min(max(len(df) * 35 + 45, 100), 600)
 
 def whatsapp_report(title, data, max_rows=40):
@@ -130,55 +134,36 @@ def load_sor(path):
     try:
         source = download_file(path)
         if source is None: return None
-        
         df = pd.read_excel(source, engine='openpyxl')
-        
-        while df.shape[1] < 31:
-            df[f"COL_AUTO_{df.shape[1]}"] = 0
-            
+        while df.shape[1] < 31: df[f"COL_AUTO_{df.shape[1]}"] = 0
         df.rename(columns={
             df.columns[2]: "CODIGO", df.columns[3]: "DESCRIPCION", df.columns[4]: "CATEGORIA",
             df.columns[5]: "NO_TIENDA", df.columns[6]: "TIENDA", df.columns[7]: "CIUDAD",
             df.columns[8]: "ESTADO", df.columns[9]: "FORMATO", 
-            df.columns[30]: "DIAS_INV",  
-            df.columns[28]: "INV_CAJAS", 
-            df.columns[24]: "SO_$",      
-            df.columns[0]: "RESURTIMIENTO"
+            df.columns[30]: "DIAS_INV", df.columns[28]: "INV_CAJAS", df.columns[24]: "SO_$", df.columns[0]: "RESURTIMIENTO"
         }, inplace=True)
-        
         df["CODIGO"] = df["CODIGO"].astype(str).str.replace(r'\.0*$', '', regex=True)
-        
         cols_num = ["DIAS_INV", "INV_CAJAS", "SO_$"]
-        for c in cols_num:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        
+        for c in cols_num: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         cols_4sem = [df.columns[21], df.columns[22], df.columns[23], df.columns[24]]
-        for c in cols_4sem:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        
+        for c in cols_4sem: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         df['SO_4SEM'] = df[cols_4sem].sum(axis=1) 
         df['SIN_VTA'] = (df['SO_4SEM'] == 0)
         df['VTA_PROM'] = df['SO_4SEM'] 
         return optimize_floats(df)
-    except Exception as e: 
-        return None
+    except Exception: return None
 
 @st.cache_data(**CACHE_CONFIG)
 def load_wal(path):
     try:
         source = download_file(path)
         if source is None: return None
-
         df = pd.read_excel(source, engine='openpyxl')
-        
-        while df.shape[1] < 97:
-            df[f"COL_AUTO_{df.shape[1]}"] = 0
-            
+        while df.shape[1] < 97: df[f"COL_AUTO_{df.shape[1]}"] = 0
         df.rename(columns={
             df.columns[0]: "CODIGO", df.columns[4]: "DESCRIPCION", df.columns[5]: "CATEGORIA",
             df.columns[7]: "ESTADO", df.columns[15]: "TIENDA", df.columns[16]: "FORMATO",
-            df.columns[18]: "MARCA",
-            df.columns[33]: "DIAS_INV", df.columns[42]: "EXISTENCIA"
+            df.columns[18]: "MARCA", df.columns[33]: "DIAS_INV", df.columns[42]: "EXISTENCIA"
         }, inplace=True)
         df["CODIGO"] = df["CODIGO"].astype(str).str.replace(r'\.0*$', '', regex=True)
         for col_idx in [33, 42, 73, 74, 75, 76, 96]:
@@ -187,45 +172,35 @@ def load_wal(path):
         df['PROM_PZS_MENSUAL'] = df.iloc[:,[73,74,75,76]].mean(axis=1)
         df['SO_$'] = df.iloc[:,96]
         return optimize_floats(df)
-    except Exception as e: 
-        return None
+    except Exception: return None
 
 @st.cache_data(**CACHE_CONFIG)
 def load_che(path):
     try:
         source = download_file(path)
         if source is None: return None
-
         df = pd.read_excel(source, engine='openpyxl')
-        
-        while df.shape[1] < 20:
-            df[f"COL_AUTO_{df.shape[1]}"] = 0
-            
+        while df.shape[1] < 20: df[f"COL_AUTO_{df.shape[1]}"] = 0
         col_h = pd.to_numeric(df.iloc[:, 7], errors='coerce')
         df = df[col_h != 0]
-            
         df = df.dropna(subset=[df.columns[12]])
         df = df[pd.to_numeric(df.iloc[:,9], errors='coerce').notna()]
-        
         df.rename(columns={
             df.columns[3]: "ESTADO", df.columns[8]: "CATEGORIA", df.columns[9]: "NO_TIENDA",
             df.columns[10]: "TIENDA", df.columns[12]: "ARTICULO", df.columns[13]: "INV_ULT_SEM",
             df.columns[17]: "VTA_PROM_DIARIA", df.columns[18]: "DIAS_INV", df.columns[19]: "SELL_OUT"
         }, inplace=True)
-
         for col in ["INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            
         return optimize_floats(df)
-    except Exception as e: 
-        return None
+    except Exception: return None
 
 # --- 5. CSS AVANZADO RESPONSIVO ---
 act = st.session_state.active_retailer
 style_on = "opacity: 1 !important; border: 3px solid #ffffff !important; transform: scale(1.02) !important; box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important; z-index: 10 !important;"
 style_off = "opacity: 0.6 !important; transform: scale(0.98) !important; filter: grayscale(40%) !important; border: 1px solid transparent !important;"
 
-css_styles = {k: style_on if act == k else style_off for k in ['SORIANA', 'WALMART', 'CHEDRAUI']}
+css_styles = {k: style_on if act == k else style_off for k in ['SORIANA', 'WALMART', 'CHEDRAUI', 'CHATBOT']}
 
 st.markdown(f"""
 <style>
@@ -241,6 +216,7 @@ div[data-testid="stHorizontalBlock"] button {{ border-radius: 10px !important; f
 div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important; {css_styles['SORIANA']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important; {css_styles['WALMART']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(3) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
+div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth-of-type(4) button {{ background: linear-gradient(135deg, #4b5563, #343a40) !important; color: white !important; {css_styles['CHATBOT']} }}
 .btn-ranking-blue {{ background-color: #0071DC !important; color: white !important; border: 2px solid white !important; }}
 .btn-ranking-orange {{ background-color: #FF8C00 !important; color: white !important; border: 2px solid white !important; }}
 .btn-ranking-olive {{ background-color: #808000 !important; color: white !important; border: 2px solid white !important; }}
@@ -249,7 +225,7 @@ div[data-testid="stHorizontalBlock"]:nth-of-type(2) [data-testid="stColumn"]:nth
 
 @media (max-width: 768px) {{
     .block-container {{ padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
-    div[data-testid="stHorizontalBlock"] button {{ height: 60px !important; font-size: 0.85rem !important; min-height: auto !important; }}
+    div[data-testid="stHorizontalBlock"] button {{ height: 50px !important; font-size: 0.75rem !important; min-height: auto !important; padding: 0 !important; }}
     .kpi-value {{ font-size: 1.5rem !important; }}
     .kpi-title {{ font-size: 0.7rem !important; }}
     .retailer-header {{ font-size: 1rem; padding: 8px; margin: 10px 0; }}
@@ -280,10 +256,11 @@ status_color = "#28a745" if st.session_state.is_online else "#dc3545"
 st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
 
 # --- 7. NAVEGACIÓN ---
-col1, col2, col3 = st.columns(3, gap="small")
+col1, col2, col3, col4 = st.columns(4, gap="small")
 with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True, key="nav_sor")
 with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True, key="nav_wal")
 with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True, key="nav_che")
+with col4: st.button("🤖 IA", on_click=set_retailer, args=("CHATBOT",), use_container_width=True, key="nav_bot")
 
 st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
@@ -323,7 +300,6 @@ def view_soriana(df_s):
                 opts_res = ["Todos"] + sorted(df_s["RESURTIMIENTO"].astype(str).unique())
                 def_res = ["1.0"] if "1.0" in opts_res else ["Todos"]
                 fil_res = st.multiselect("Resurtible", opts_res, default=def_res)
-                
                 fil_nda = st.multiselect("No Tienda", sorted(df_s["NO_TIENDA"].astype(str).unique()))
                 fil_nom = st.multiselect("Nombre", sorted(df_s["TIENDA"].astype(str).unique()))
                 fil_cat = st.multiselect("Categoría", sorted(df_s["CATEGORIA"].astype(str).unique()))
@@ -369,7 +345,6 @@ def view_soriana(df_s):
             ]
             res_rows = []
             dff['DESC_CLEAN'] = dff["DESCRIPCION"].astype(str).str.upper().str.replace(r'&NBSP;', ' ', regex=True).str.strip()
-            
             for item in target_list:
                 clean_item = item.strip()
                 mask = dff['DESC_CLEAN'].str.contains(clean_item, case=False, regex=False)
@@ -380,7 +355,6 @@ def view_soriana(df_s):
                     res_rows.append({"CODIGO": code, "ARTICULO": item, "DIAS INV": avg_days})
                 else:
                     res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV": 0})
-            
             df_prod_summary = pd.DataFrame(res_rows)
             st.dataframe(df_prod_summary.style.format({'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
 
@@ -401,7 +375,6 @@ def view_soriana(df_s):
             st.dataframe(disp_sor_dias.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_sor_dias))
             
         else:
-            # --- VISTA PRINCIPAL SORIANA: SELL OUT ---
             def get_soriana_category(desc):
                 desc = str(desc).upper().replace(" ", "")
                 if "SABROSANO" in desc: return "SABROSANO"
@@ -456,10 +429,8 @@ def view_soriana(df_s):
             whatsapp_report("SORIANA Reporte", disp)
             st.dataframe(disp.style.format({'INV CAJAS': "{:,.0f}", 'SELL OUT SEM': '${:,.2f}', 'SELL OUT ULT 4 SEM': '${:,.2f}', 'DIAS INV': "{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
-        # --- RANKING SORIANA ---
         st.divider()
         st.markdown("<h3 style='text-align: center; color: #444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
-        
         s_mod1, s_mod2 = st.columns(2)
         with s_mod1: sel_s_rank_st = st.multiselect("Estado (Ranking)", sorted(df_s["ESTADO"].astype(str).unique()), key="s_rnk_st")
         with s_mod2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].astype(str).unique()), key="s_rnk_fmt")
@@ -486,28 +457,9 @@ def view_soriana(df_s):
             
         dff_s_rank = apply_filters(df_s, ["ESTADO", "FORMATO"], [sel_s_rank_st, sel_s_rank_fmt])
 
-        list_s_gen = [
-            "ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE COMESTIBLE GRAN TRADICION 900 ML", "ACEITE COMESTIBLE SABROSANO +30 850 ML", 
-            "ACEITE OLIVA OLI PURO SPRAY 145 ML", "JUSTO 850 ML", "ACEITE COMESTIBLE AEROSOL 170GR", "ACEITE COMESTIBLE AVE 850 ML", 
-            "ACEITE COMESTIBLE NUTRIOLI 400 ML", "ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML", "ACEITE COMESTIBLE NUTRIOLI DHA 850 ML", 
-            "ACEITE COMESTIBLE SABROSANO 850 ML", "SABROSANO RINDE+ 850 ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", 
-            "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", 
-            "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE COMESTIBLE GRAN TRADICION 800 ML", 
-            "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "VINAGRE BALSAMICO 250ML", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML", 
-            "ACEITE NUTRIOLI PROTECT MENTE 850 ML", "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", 
-            "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", 
-            "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"
-        ]
-        list_s_pas = [
-            "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", 
-            "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", 
-            "PASTA CODO NUTRIOLI 200GR"
-        ]
-        list_s_oli = [
-            "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", 
-            "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", 
-            "ADEREZO OLI 500 ML BOT", "ACEITE OLIVA OLI PURO SPRAY 145 ML"
-        ]
+        list_s_gen = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700", "ACEITE COMESTIBLE GRAN TRADICION 900 ML", "ACEITE COMESTIBLE SABROSANO +30 850 ML", "ACEITE OLIVA OLI PURO SPRAY 145 ML", "JUSTO 850 ML", "ACEITE COMESTIBLE AEROSOL 170GR", "ACEITE COMESTIBLE AVE 850 ML", "ACEITE COMESTIBLE NUTRIOLI 400 ML", "ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML", "ACEITE COMESTIBLE NUTRIOLI DHA 850 ML", "ACEITE COMESTIBLE SABROSANO 850 ML", "SABROSANO RINDE+ 850 ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE COMESTIBLE GRAN TRADICION 800 ML", "ACEITE DE SOYA NUTRIOLI BOT 850 ML", "VINAGRE BALSAMICO 250ML", "ACEITE NUTRIOLI PROTECT DEFENSAS 850ML", "ACEITE NUTRIOLI PROTECT MENTE 850 ML", "PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"]
+        list_s_pas = ["PASTA FIDEO NUTRIOLI 200GR", "PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR", "PASTA FUSILLI INTEGRAL NUTRIOLI 200GR", "PASTA CODO NUTRIOLI VERDURAS 200GR", "PASTA FUSILLI VERDURAS NUTRIOLI 450GR", "PASTA SPAGHETTI NUTRIOLI 200GR", "PASTA CODO NUTRIOLI 200GR"]
+        list_s_oli = ["ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML", "ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML", "ADERE OLI OLIVA PARA COCINAR 500 ML OLI", "ADERE OLI OLIVA PARA COCINAR 750 ML OLI", "ADEREZO OLI 250 ML PZ", "ADEREZO OLI 500 ML BOT", "ACEITE OLIVA OLI PURO SPRAY 145 ML"]
         list_s_nut = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML"]
 
         target_list_s = []
@@ -520,7 +472,6 @@ def view_soriana(df_s):
         if target_list_s:
             dff_s_rank['DESC_CLEAN'] = dff_s_rank['DESCRIPCION'].astype(str).str.strip()
             target_list_s_clean = [t.strip() for t in target_list_s]
-            
             dff_sub = dff_s_rank[dff_s_rank["DESC_CLEAN"].isin(target_list_s_clean)]
             if not dff_sub.empty:
                 final_s_rank = dff_sub.groupby(["NO_TIENDA", "TIENDA"])['SO_$'].sum().reset_index()
@@ -606,7 +557,6 @@ def view_walmart(df_w):
 
         def get_walmart_category(desc):
             desc_clean = str(desc).upper().replace(" ", "").replace("&NBSP;", "")
-            
             if any(b in desc_clean for b in borges_clean): return "BORGES"
             if "NUTRIOLI" in desc_clean and "946" in desc_clean: return "NUTRIOLI"
             if "SABROSANO" in desc_clean: return "SABROSANO"
@@ -686,8 +636,10 @@ def view_walmart(df_w):
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_walmart_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
+                total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
+                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
                     domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI", "BORGES"]
                     range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39", "#FF0000"]
                     color_map = dict(zip(domain, range_))
@@ -700,7 +652,6 @@ def view_walmart(df_w):
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
                         textfont_size=11
                     )
-                    
                     fig.update_layout(
                         showlegend=False, 
                         margin=dict(t=20, b=20, l=40, r=40), 
@@ -839,6 +790,7 @@ def view_chedraui(df_c):
                 total_pie = pie_df['SELL_OUT'].sum()
                 
                 if not pie_df.empty:
+                    pie_df['Percent'] = (pie_df['SELL_OUT'] / total_pie) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     color_map = dict(zip(domain, range_))
@@ -911,6 +863,79 @@ def view_chedraui(df_c):
                 st.dataframe(final_c_rank.sort_values(by=rank_title, ascending=False).style.format({rank_title: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
+# --- VISTA CHATBOT ---
+def view_chatbot():
+    st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['CHATBOT']}'>🤖 ASISTENTE IA MÚLTIPLE</div>", unsafe_allow_html=True)
+    
+    st.info("💡 Obtén respuestas rápidas haciendo preguntas naturales sobre tus 3 bases de datos (Soriana, Walmart y Chedraui).")
+    
+    api_key = st.text_input("🔑 Ingresa tu API Key de Google Gemini (Gratuita):", type="password")
+    
+    if not api_key:
+        st.warning("☝️ Necesitas ingresar tu API Key para activar la inteligencia artificial.")
+        st.markdown("[¿No tienes una? Haz clic aquí para obtenerla gratis](https://aistudio.google.com/)")
+        return
+
+    st.success("✅ Sistema listo. Analizando conexiones en segundo plano...")
+    
+    with st.spinner("Conectando bases de datos..."):
+        df_s = get_data("SORIANA", "up_s_bot", load_sor)
+        df_w = get_data("WALMART", "up_w_bot", load_wal)
+        df_c = get_data("CHEDRAUI", "up_c_bot", load_che)
+        
+    dfs = []
+    nombres = []
+    if df_s is not None: 
+        df_s.name = "Soriana"
+        dfs.append(df_s)
+        nombres.append("Soriana")
+    if df_w is not None: 
+        df_w.name = "Walmart"
+        dfs.append(df_w)
+        nombres.append("Walmart")
+    if df_c is not None: 
+        df_c.name = "Chedraui"
+        dfs.append(df_c)
+        nombres.append("Chedraui")
+        
+    if not dfs:
+        st.error("❌ No se pudieron cargar las bases de datos. Revisa la conexión.")
+        return
+        
+    st.caption(f"📚 Bases disponibles para tu consulta: **{', '.join(nombres)}**")
+    
+    # Motor de IA
+    os.environ["GEMINI_API_KEY"] = api_key
+    llm = GoogleGemini(api_key=api_key)
+    dl = SmartDatalake(dfs, config={"llm": llm, "verbose": False})
+    
+    # Sistema de Chat en Pantalla
+    if "messages" not in st.session_state:
+        st.session_state.messages = [{"role": "assistant", "content": "¡Hola! Soy tu asistente de análisis de Retail. ¿Qué te gustaría saber hoy? (Ej. ¿Cuál es el producto con más días de inventario en Walmart?)"}]
+        
+    for msg in st.session_state.messages:
+        st.chat_message(msg["role"]).write(msg["content"])
+        
+    if prompt := st.chat_input("Escribe tu consulta aquí..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.chat_message("user").write(prompt)
+        
+        with st.chat_message("assistant"):
+            with st.spinner("🧠 Pensando y analizando miles de filas..."):
+                try:
+                    respuesta = dl.chat(prompt + " (Responde en español de forma concisa y amigable)")
+                    
+                    if isinstance(respuesta, pd.DataFrame):
+                        st.dataframe(respuesta, use_container_width=True)
+                        st.session_state.messages.append({"role": "assistant", "content": "Aquí tienes la tabla que me pediste. Si cierras la app se borrará, te sugiero tomar nota."})
+                    else:
+                        st.write(respuesta)
+                        st.session_state.messages.append({"role": "assistant", "content": str(respuesta)})
+                except Exception as e:
+                    error_msg = f"Lo siento, hubo un error al procesar tu pregunta. A veces la IA se confunde con los nombres exactos de las columnas. Intenta preguntarlo de otra forma."
+                    st.error(error_msg)
+                    st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
 # --- 9. EJECUTAR VISTA ACTIVA ---
 if st.session_state.active_retailer == 'SORIANA':
     df_s = get_data("SORIANA", "up_s", load_sor)
@@ -923,6 +948,9 @@ elif st.session_state.active_retailer == 'WALMART':
 elif st.session_state.active_retailer == 'CHEDRAUI':
     df_c = get_data("CHEDRAUI", "up_c", load_che)
     if df_c is not None: view_chedraui(df_c)
+
+elif st.session_state.active_retailer == 'CHATBOT':
+    view_chatbot()
 
 # --- 10. PIE DE PÁGINA ---
 st.divider()
