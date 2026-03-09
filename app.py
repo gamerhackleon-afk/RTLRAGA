@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import urllib.parse 
 import requests 
-import altair as alt 
+import plotly.express as px 
 from io import BytesIO 
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
@@ -426,23 +426,21 @@ def view_soriana(df_s):
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_soriana_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
-                total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
+                    color_map = dict(zip(domain, range_))
                     
-                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SO_$", type="quantitative", stack=True)).properties(height=350)
-                    pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
-                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
-                        order=alt.Order("SO_$", sort="descending"),
-                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f'), alt.Tooltip('Percent', format='.1f', title='%')]
+                    fig = px.pie(pie_df, values='SO_$', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
+                    fig.update_traces(
+                        textposition='outside',
+                        textinfo='label+percent+value',
+                        texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
-                    text = base.mark_text(radius=145, fontSize=11).encode(
-                        text=alt.Text("label_text:N"), order=alt.Order("SO_$", sort="descending"), color=alt.value("black")
-                    ).transform_calculate(label_text="datum.Category + ' (' + format(datum.Percent, '.0f') + '%): $' + format(datum['SO_$'], ',.0f')").transform_filter(alt.datum['SO_$'] > (total_pie * 0.025))
-                    st.altair_chart(pie + text, use_container_width=True)
+                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
             if st.session_state.s_rojo: 
@@ -590,7 +588,6 @@ def view_walmart(df_w):
         if st.session_state.w_neg: dff = dff[dff["EXISTENCIA"] < 0]; st.warning("VISTA: NEGATIVOS")
         if st.session_state.w_4w: dff = dff[(dff.iloc[:,73]==0)&(dff.iloc[:,74]==0)&(dff.iloc[:,75]==0)&(dff.iloc[:,76]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
-        # Configuración BORGES
         borges_list = [
             "BORGES ACEITE OLIVA EXTRA VIRGEN 500", "BORGES ACEITE OLIVA EXTRA SUAVE", 
             "ACEITE DE OLIVA EXTRA VIRGEN KOSHER", "ACEITE DE OLIVA A LA ALBAHACA FRESCA", 
@@ -686,32 +683,22 @@ def view_walmart(df_w):
                 chart_data['Category'] = chart_data['DESCRIPCION'].apply(get_walmart_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
                 pie_df = pie_df[pie_df['SO_$'] > 0]
-                total_pie = pie_df['SO_$'].sum()
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SO_$'] / total_pie) * 100
                     domain = ["SABROSANO", "GT", "OLIVAS", "BALSAMICO", "PASTAS", "REST NUTRIOLI", "NUTRIOLI", "BORGES"]
                     range_ = ["#E4007C", "#a18262", "#6B8E23", "#9f4576", "#426045", "#bfff00", "#008f39", "#FF0000"]
+                    color_map = dict(zip(domain, range_))
                     
-                    base = alt.Chart(pie_df).encode(
-                        theta=alt.Theta(field="SO_$", type="quantitative", stack=True)
-                    ).properties(height=350)
-                    
-                    pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
-                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
-                        order=alt.Order("SO_$", sort="descending"),
-                        tooltip=['Category', alt.Tooltip('SO_$', format='$,.2f'), alt.Tooltip('Percent', format='.1f', title='%')]
+                    fig = px.pie(pie_df, values='SO_$', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
+                    fig.update_traces(
+                        textposition='outside',
+                        textinfo='label+percent+value',
+                        texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
+                        textfont_size=11
                     )
-                    
-                    text = base.mark_text(radius=145, fontSize=11).encode(
-                        text=alt.Text("label_text:N"), order=alt.Order("SO_$", sort="descending"), color=alt.value("black")
-                    ).transform_calculate(
-                        label_text="datum.Category + ' (' + format(datum.Percent, '.0f') + '%): $' + format(datum['SO_$'], ',.0f')"
-                    ).transform_filter(
-                        (alt.datum['SO_$'] > (total_pie * 0.025)) | (alt.datum['Category'] == 'BORGES')
-                    )
-                    
-                    st.altair_chart(pie + text, use_container_width=True)
+                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
             disp = dff[["CODIGO", "DESCRIPCION", "TIENDA", "EXISTENCIA", "SO_$", "PROM_PZS_MENSUAL"]].copy()
@@ -837,22 +824,22 @@ def view_chedraui(df_c):
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
                 pie_df = chart_data.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
                 pie_df = pie_df[pie_df['SELL_OUT'] > 0]
-                total_pie = pie_df['SELL_OUT'].sum()
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SELL_OUT'] / total_pie) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
-                    base = alt.Chart(pie_df).encode(theta=alt.Theta(field="SELL_OUT", type="quantitative", stack=True)).properties(height=350)
-                    pie = base.mark_arc(innerRadius=60, outerRadius=100).encode(
-                        color=alt.Color(field="Category", type="nominal", scale=alt.Scale(domain=domain, range=range_), legend=None),
-                        order=alt.Order("SELL_OUT", sort="descending"),
-                        tooltip=['Category', alt.Tooltip('SELL_OUT', format='$,.2f')]
+                    color_map = dict(zip(domain, range_))
+                    
+                    fig = px.pie(pie_df, values='SELL_OUT', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
+                    fig.update_traces(
+                        textposition='outside',
+                        textinfo='label+percent+value',
+                        texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
+                        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>',
+                        textfont_size=11
                     )
-                    text = base.mark_text(radius=130, fontSize=11).encode(
-                        text=alt.Text("label_text:N"), order=alt.Order("SELL_OUT", sort="descending"), color=alt.value("black")
-                    ).transform_calculate(label_text="datum.Category + ' (' + format(datum.Percent, '.0f') + '%): $' + format(datum['SELL_OUT'], ',.0f')").transform_filter(alt.datum.Percent > 2.5)
-                    st.altair_chart(pie + text, use_container_width=True)
+                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
             view_mode = ""
