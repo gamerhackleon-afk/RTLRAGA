@@ -16,8 +16,8 @@ from pandasai.llm.base import LLM
 class SafeGemini(LLM):
     def __init__(self, api_key: str):
         genai.configure(api_key=api_key)
-        # Obligamos a usar el modelo moderno que sí existe
-        self.modelo_real = genai.GenerativeModel('gemini-1.5-flash')
+        # Obligamos a usar el modelo 2.5 (el más reciente y activo de Google)
+        self.modelo_real = genai.GenerativeModel('gemini-2.5-flash')
 
     def call(self, instruction, context=None) -> str:
         prompt = instruction.to_string()
