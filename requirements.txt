@@ -2,5 +2,6 @@ streamlit
 pandas
 openpyxl
 requests
-altair
 plotly
+pandasai
+google-generativeai
