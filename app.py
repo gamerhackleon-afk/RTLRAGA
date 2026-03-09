@@ -9,7 +9,24 @@ import os
 
 # --- LIBRERÍAS DE IA ---
 from pandasai import SmartDatalake
-from pandasai.llm import GoogleGemini
+import google.generativeai as genai
+from pandasai.llm.base import LLM
+
+# --- NUESTRO CEREBRO CUSTOM BLINDADO CONTRA EL ERROR 404 ---
+class SafeGemini(LLM):
+    def __init__(self, api_key: str):
+        genai.configure(api_key=api_key)
+        # Obligamos a usar el modelo moderno que sí existe
+        self.modelo_real = genai.GenerativeModel('gemini-1.5-flash')
+
+    def call(self, instruction, context=None) -> str:
+        prompt = instruction.to_string()
+        response = self.modelo_real.generate_content(prompt)
+        return response.text
+
+    @property
+    def type(self) -> str:
+        return "safe-gemini"
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -22,7 +39,7 @@ st.set_page_config(
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
 CACHE_CONFIG = {'ttl': 3600, 'max_entries': 10, 'show_spinner': False}
 
-# URLs de Datos (Incluyendo FRESKO para el Chatbot)
+# URLs de Datos
 URLS_DB = {
     "SORIANA": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/SORIANA.xlsx",
     "WALMART": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/WALMART.xlsx",
@@ -707,7 +724,7 @@ def view_walmart(df_w):
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA OLIVAS ($)'})
         elif st.session_state.w_nutri_top10:
             df_sub = dff_rank[dff_rank["DESCRIPCION"].str.contains("NUTRIOLI 946M", case=False, na=False)]
-            if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA NUTRIOLI ($)'}).sort_values(by='VENTA NUTRIOLI ($)', ascending=False).head(10)
+            if not df_sub.empty: final_rank = sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA NUTRIOLI ($)'}).sort_values(by='VENTA NUTRIOLI ($)', ascending=False).head(10)
         
         if final_rank is not None:
             st.dataframe(final_rank.sort_values(by=final_rank.columns[1], ascending=False).style.format({final_rank.columns[1]: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_rank))
@@ -861,9 +878,8 @@ def view_chedraui(df_c):
                 st.dataframe(final_c_rank.sort_values(by=rank_title, ascending=False).style.format({rank_title: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
-# --- VISTA CHATBOT (LIMPIA E INMERSIVA) ---
+# --- VISTA CHATBOT ---
 def view_chatbot():
-    # Clave API registrada por defecto
     API_KEY = "AIzaSyBYAp9MJ1zjkLGbJRy0fMUAIiXV8R1WbIE"
     
     with st.spinner("Sincronizando datos para la IA..."):
@@ -890,11 +906,8 @@ def view_chatbot():
         st.error("No se pudieron cargar las bases de datos.")
         return
     
-    os.environ["GEMINI_API_KEY"] = API_KEY
-    # Aquí forzamos de dos maneras diferentes a la librería para que no use el modelo viejo
-    llm = GoogleGemini(api_key=API_KEY, model="models/gemini-1.5-flash")
-    llm.model = "models/gemini-1.5-flash" 
-    
+    # Inyectamos nuestra clase personalizada
+    llm = SafeGemini(api_key=API_KEY)
     dl = SmartDatalake(dfs, config={"llm": llm, "verbose": False})
     
     if "messages" not in st.session_state:
@@ -918,7 +931,7 @@ def view_chatbot():
                         st.write(respuesta)
                         st.session_state.messages.append({"role": "assistant", "content": str(respuesta)})
                 except Exception as e:
-                    error_msg = "Lo siento, tuve un problema al cruzar esos datos. Intenta hacer la pregunta con otras palabras o especificando mejor los nombres de las columnas."
+                    error_msg = f"Lo siento, tuve un problema al cruzar esos datos. Asegúrate de escribir bien los nombres de los productos."
                     st.error(error_msg)
                     st.session_state.messages.append({"role": "assistant", "content": error_msg})
 
