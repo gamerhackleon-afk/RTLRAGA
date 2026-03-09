@@ -1,7 +1,9 @@
 streamlit
-pandas
-openpyxl
+pandas<2.2.0
+openpyxl==3.1.2
 requests
 plotly
 pandasai
 google-generativeai
+setuptools
+wheel
