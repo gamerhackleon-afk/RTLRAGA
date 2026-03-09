@@ -894,7 +894,7 @@ def view_chatbot():
         return
     
     os.environ["GEMINI_API_KEY"] = API_KEY
-    llm = GoogleGemini(api_key=API_KEY)
+    llm = GoogleGemini(api_key=API_KEY, model="gemini-1.5-flash")
     dl = SmartDatalake(dfs, config={"llm": llm, "verbose": False})
     
     if "messages" not in st.session_state:
