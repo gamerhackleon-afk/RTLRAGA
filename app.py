@@ -17,7 +17,7 @@ st.set_page_config(
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
 CACHE_CONFIG = {'ttl': 3600, 'max_entries': 10, 'show_spinner': False}
 
-# URLs de Datos (FRESKO ELIMINADO Definitivamente)
+# URLs de Datos (FRESKO ELIMINADO DEFINITIVAMENTE)
 URLS_DB = {
     "SORIANA": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/SORIANA.xlsx",
     "WALMART": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/WALMART.xlsx",
@@ -189,8 +189,11 @@ def load_che(path):
         return optimize_floats(df)
     except Exception: return None
 
-# --- 5. CSS AVANZADO RESPONSIVO ---
+
+# --- 5. CSS AVANZADO RESPONSIVO Y ANIMACIONES DE BOTONES ---
 act = st.session_state.active_retailer
+active_color = RETAILER_COLORS.get(act, "#333333")
+
 style_on = "opacity: 1 !important; border: 3px solid #ffffff !important; transform: scale(1.02) !important; box-shadow: 0 8px 16px rgba(0,0,0,0.3) !important; z-index: 10 !important;"
 style_off = "opacity: 0.6 !important; transform: scale(0.98) !important; filter: grayscale(40%) !important; border: 1px solid transparent !important;"
 
@@ -206,34 +209,55 @@ html, body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; }}
 .kpi-title {{ font-size: 0.8rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }}
 .kpi-value {{ font-size: 2rem; font-weight: 800; margin-top: 5px; word-break: break-word; }}
 .retailer-header {{ font-size: 1.2rem; font-weight: 800; color: white; padding: 10px 15px; border-radius: 8px; margin: 15px 0; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-shadow: 0 1px 2px rgba(0,0,0,0.2); }}
-div[data-testid="stHorizontalBlock"] button {{ border-radius: 10px !important; font-weight: 700 !important; text-transform: uppercase; transition: all 0.15s ease-in-out !important; border: none !important; }}
+
+/* BOTONES PRINCIPALES DE NAVEGACIÓN */
+div[data-testid="stHorizontalBlock"]:nth-of-type(1) button {{ border-radius: 10px !important; font-weight: 800 !important; text-transform: uppercase; transition: all 0.2s ease-in-out !important; border: none !important; }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important; {css_styles['SORIANA']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important; {css_styles['WALMART']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(3) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
-.btn-ranking-blue {{ background-color: #0071DC !important; color: white !important; border: 2px solid white !important; }}
-.btn-ranking-orange {{ background-color: #FF8C00 !important; color: white !important; border: 2px solid white !important; }}
-.btn-ranking-olive {{ background-color: #808000 !important; color: white !important; border: 2px solid white !important; }}
-.btn-ranking-green {{ background-color: #28a745 !important; color: #FFC220 !important; border: 2px solid #FFC220 !important; }}
-.dias-inv-style > button {{ background-color: #28a745 !important; color: white !important; }}
+
+/* ANIMACIÓN PARA SUB-BOTONES INACTIVOS */
+div.stButton > button[kind="secondary"] {{
+    background-color: #ffffff !important;
+    color: #555555 !important;
+    border: 1px solid #dcdcdc !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease-in-out !important;
+}}
+div.stButton > button[kind="secondary"]:hover {{
+    border: 1px solid {active_color} !important;
+    color: {active_color} !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important;
+}}
+
+/* ANIMACIÓN PARA SUB-BOTONES ACTIVOS (ILUMINADOS) */
+div.stButton > button[kind="primary"] {{
+    background-color: {active_color} !important;
+    color: #ffffff !important;
+    border: 2px solid {active_color} !important;
+    font-weight: 800 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important;
+    transform: scale(1.03) !important;
+    transition: all 0.2s ease-in-out !important;
+}}
 
 @media (max-width: 768px) {{
     .block-container {{ padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
-    div[data-testid="stHorizontalBlock"] button {{ height: 50px !important; font-size: 0.8rem !important; min-height: auto !important; padding: 0 !important; }}
-    .kpi-value {{ font-size: 1.5rem !important; }}
-    .kpi-title {{ font-size: 0.7rem !important; }}
+    div[data-testid="stHorizontalBlock"] button {{ height: 50px !important; font-size: 0.8rem !important; padding: 0 !important; }}
     .retailer-header {{ font-size: 1rem; padding: 8px; margin: 10px 0; }}
     section[data-testid="stSidebar"] {{ display: none; }}
     canvas {{ max-width: 100% !important; }}
 }}
 @media (min-width: 769px) {{
-    div[data-testid="stHorizontalBlock"] button {{ height: 90px !important; font-size: 1.2rem !important; }}
+    div[data-testid="stHorizontalBlock"] button {{ height: 70px !important; font-size: 1.1rem !important; }}
 }}
 </style>
 """, unsafe_allow_html=True)
 
-# === AQUÍ ESTÁ EL CAMBIO SOLICITADO ===
 
-# --- 6. HEADER GLOBAL (Ahora es lo PRIMERO en aparecer) ---
+# --- 6. HEADER GLOBAL (AHORA APARECE PRIMERO) ---
 c_head1, c_head2 = st.columns([1, 5])
 with c_head1:
     try: st.image("ragasa_logo.png", use_container_width=True)
@@ -246,23 +270,22 @@ with c_head2:
         </div>
     """, unsafe_allow_html=True)
 
-# Barra de estado de conexión (pegada al header)
+# Barra de estado de conexión
 status_txt = 'CONECTADO' if st.session_state.is_online else 'OFFLINE'
 status_color = "#28a745" if st.session_state.is_online else "#dc3545"
-st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-top:-10px; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-top:-10px; margin-bottom:10px;'>● {status_txt}</div>", unsafe_allow_html=True)
 
 
-# --- 7. NAVEGACIÓN PRINCIPAL (Aparece DESPUÉS del Logo) ---
+# --- 7. NAVEGACIÓN PRINCIPAL (Aparece justo debajo del logo) ---
 col1, col2, col3 = st.columns(3, gap="small")
 with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True, key="nav_sor")
 with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True, key="nav_wal")
 with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True, key="nav_che")
 
-# Línea divisoria decorativa
 st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
 
 
-# --- 8. VISTAS POR RETAILER (Funciones intactas) ---
+# --- 8. VISTAS POR RETAILER ---
 
 def view_soriana(df_s):
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
@@ -313,15 +336,9 @@ def view_soriana(df_s):
         )
 
         b1, b2, b3 = st.columns(3, gap="small")
-        with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo, use_container_width=True, type="primary", key="btn_sor_rojo")
-        with b2: 
-            st.markdown(f'<div class="{"rank-green-on" if st.session_state.s_dias_inv else "dias-inv-style"}">', unsafe_allow_html=True)
-            st.button("📅 DIAS INV", on_click=tog_s_dias_inv, use_container_width=True, key="btn_sor_dias")
-            st.markdown('</div>', unsafe_allow_html=True)
-        with b3:
-            st.markdown(f'<div class="{"rank-green-on" if st.session_state.s_dias_prod else "dias-inv-style"}">', unsafe_allow_html=True)
-            st.button("📋 DIAS X PROD", on_click=tog_s_dias_prod, use_container_width=True, key="btn_sor_prod")
-            st.markdown('</div>', unsafe_allow_html=True)
+        with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo, use_container_width=True, type="primary" if st.session_state.s_rojo else "secondary")
+        with b2: st.button("📅 DIAS INV", on_click=tog_s_dias_inv, use_container_width=True, type="primary" if st.session_state.s_dias_inv else "secondary")
+        with b3: st.button("📋 DIAS X PROD", on_click=tog_s_dias_prod, use_container_width=True, type="primary" if st.session_state.s_dias_prod else "secondary")
 
         if st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
@@ -398,7 +415,6 @@ def view_soriana(df_s):
                 pie_df = pie_df[pie_df['SO_$'] > 0]
                 
                 if not pie_df.empty:
-                    pie_df['Percent'] = (pie_df['SO_$'] / pie_df['SO_$'].sum()) * 100
                     domain = ["BALSAMICO", "SABROSANO", "PASTAS", "OLIVAS", "GT", "NUTRIOLI", "MI SAZON", "AVE", "REST NUTRIOLI"]
                     range_ = ["#e012a9", "#f705ab", "#4c915d", "#97ad6a", "#7d6010", "#02c705", "#e89015", "#ff0000", "#00ff04"]
                     color_map = dict(zip(domain, range_))
@@ -430,25 +446,11 @@ def view_soriana(df_s):
         with s_mod1: sel_s_rank_st = st.multiselect("Estado (Ranking)", sorted(df_s["ESTADO"].astype(str).unique()), key="s_rnk_st")
         with s_mod2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].astype(str).unique()), key="s_rnk_fmt")
 
-        sr1, sr2 = st.columns(2, gap="small")
-        with sr1:
-            st.markdown('<div class="btn-ranking-blue">', unsafe_allow_html=True)
-            if st.button("📊 GENERAL", key="s_rk_gen", use_container_width=True): set_s_rank('GEN')
-            st.markdown('</div>', unsafe_allow_html=True)
-        with sr2:
-            st.markdown('<div class="btn-ranking-orange">', unsafe_allow_html=True)
-            if st.button("🍝 PASTAS", key="s_rk_pas", use_container_width=True): set_s_rank('PAS')
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        sr3, sr4 = st.columns(2, gap="small")
-        with sr3:
-            st.markdown('<div class="btn-ranking-olive">', unsafe_allow_html=True)
-            if st.button("🫒 OLIVAS", key="s_rk_oli", use_container_width=True): set_s_rank('OLI')
-            st.markdown('</div>', unsafe_allow_html=True)
-        with sr4:
-            st.markdown('<div class="btn-ranking-green">', unsafe_allow_html=True)
-            if st.button("🍃 NUTRIOLI", key="s_rk_nut", use_container_width=True): set_s_rank('NUT')
-            st.markdown('</div>', unsafe_allow_html=True)
+        sr1, sr2, sr3, sr4 = st.columns(4, gap="small")
+        with sr1: st.button("📊 GENERAL", key="s_rk_gen", on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if st.session_state.s_rank_gen else "secondary")
+        with sr2: st.button("🍝 PASTAS", key="s_rk_pas", on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if st.session_state.s_rank_pas else "secondary")
+        with sr3: st.button("🫒 OLIVAS", key="s_rk_oli", on_click=set_s_rank, args=('OLI',), use_container_width=True, type="primary" if st.session_state.s_rank_oli else "secondary")
+        with sr4: st.button("🍃 NUTRIOLI", key="s_rk_nut", on_click=set_s_rank, args=('NUT',), use_container_width=True, type="primary" if st.session_state.s_rank_nut else "secondary")
             
         dff_s_rank = apply_filters(df_s, ["ESTADO", "FORMATO"], [sel_s_rank_st, sel_s_rank_fmt])
 
@@ -520,19 +522,11 @@ def view_walmart(df_w):
         dff_kpi = apply_filters(df_w, ["MARCA", "ESTADO", "TIENDA", "FORMATO"], [sel_marca, sel_state, sel_store, sel_fmt])
         dff = apply_filters(dff_kpi, ["DESCRIPCION"], [sel_prod])
 
-        b1, b2, b3 = st.columns(3, gap="small")
-        with b1: st.button("📉 NEGATIVOS", on_click=tog_w, args=('w_neg',), key="btn_w_neg", use_container_width=True)
-        with b2: st.button("🔴 SIN VTA 4SEM", on_click=tog_w, args=('w_4w',), key="btn_w_4w", use_container_width=True)
-        with b3: 
-            st.markdown(f'<div class="{"rank-green-on" if st.session_state.w_dias_inv else "dias-inv-style"}">', unsafe_allow_html=True)
-            st.button("📅 DIAS INV", on_click=tog_w, args=('w_dias_inv',), key="btn_w_dias", use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        br1, br2 = st.columns(2, gap="small")
-        with br1:
-            st.markdown(f'<div class="{"rank-green-on" if st.session_state.w_dias_prod else "dias-inv-style"}">', unsafe_allow_html=True)
-            st.button("📋 DIAS X PROD", on_click=tog_w, args=('w_dias_prod',), key="btn_w_dias_prod", use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        b1, b2, b3, b4 = st.columns(4, gap="small")
+        with b1: st.button("📉 NEGATIVOS", on_click=tog_w, args=('w_neg',), key="btn_w_neg", use_container_width=True, type="primary" if st.session_state.w_neg else "secondary")
+        with b2: st.button("🔴 SIN VTA 4SEM", on_click=tog_w, args=('w_4w',), key="btn_w_4w", use_container_width=True, type="primary" if st.session_state.w_4w else "secondary")
+        with b3: st.button("📅 DIAS INV", on_click=tog_w, args=('w_dias_inv',), key="btn_w_dias", use_container_width=True, type="primary" if st.session_state.w_dias_inv else "secondary")
+        with b4: st.button("📋 DIAS X PROD", on_click=tog_w, args=('w_dias_prod',), key="btn_w_dias_prod", use_container_width=True, type="primary" if st.session_state.w_dias_prod else "secondary")
 
         if st.session_state.w_neg: dff = dff[dff["EXISTENCIA"] < 0]; st.warning("VISTA: NEGATIVOS")
         if st.session_state.w_4w: dff = dff[(dff.iloc[:,73]==0)&(dff.iloc[:,74]==0)&(dff.iloc[:,75]==0)&(dff.iloc[:,76]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
@@ -659,24 +653,11 @@ def view_walmart(df_w):
         with c_mod1: sel_st_rank = st.multiselect("Estado (Ranking)", sorted(df_w["ESTADO"].astype(str).unique()), key="rnk_st")
         with c_mod2: sel_fmt_rank = st.multiselect("Formato (Ranking)", sorted(df_w["FORMATO"].astype(str).unique()), key="rnk_fmt")
         
-        r1, r2 = st.columns(2, gap="small")
-        with r1:
-            st.markdown('<div class="btn-ranking-blue">', unsafe_allow_html=True)
-            if st.button("📊 GENERAL", key="rk_gen", use_container_width=True): set_rank('tiendas')
-            st.markdown('</div>', unsafe_allow_html=True)
-        with r2:
-            st.markdown('<div class="btn-ranking-orange">', unsafe_allow_html=True)
-            if st.button("🍝 PASTAS", key="rk_pas", use_container_width=True): set_rank('pastas')
-            st.markdown('</div>', unsafe_allow_html=True)
-        r3, r4 = st.columns(2, gap="small")
-        with r3:
-            st.markdown('<div class="btn-ranking-olive">', unsafe_allow_html=True)
-            if st.button("🫒 OLIVAS", key="rk_oli", use_container_width=True): set_rank('olivas')
-            st.markdown('</div>', unsafe_allow_html=True)
-        with r4:
-            st.markdown('<div class="btn-ranking-green">', unsafe_allow_html=True)
-            if st.button("🏆 NUTRIOLI", key="rk_nut", use_container_width=True): set_rank('nutrioli')
-            st.markdown('</div>', unsafe_allow_html=True)
+        r1, r2, r3, r4 = st.columns(4, gap="small")
+        with r1: st.button("📊 GENERAL", key="rk_gen", on_click=set_rank, args=('tiendas',), use_container_width=True, type="primary" if st.session_state.w_rank_tiendas else "secondary")
+        with r2: st.button("🍝 PASTAS", key="rk_pas", on_click=set_rank, args=('pastas',), use_container_width=True, type="primary" if st.session_state.w_rank_pastas else "secondary")
+        with r3: st.button("🫒 OLIVAS", key="rk_oli", on_click=set_rank, args=('olivas',), use_container_width=True, type="primary" if st.session_state.w_rank_olivas else "secondary")
+        with r4: st.button("🏆 NUTRIOLI", key="rk_nut", on_click=set_rank, args=('nutrioli',), use_container_width=True, type="primary" if st.session_state.w_nutri_top10 else "secondary")
             
         dff_rank = apply_filters(df_w, ["ESTADO", "FORMATO"], [sel_st_rank, sel_fmt_rank])
         final_rank = None
@@ -694,6 +675,7 @@ def view_walmart(df_w):
         
         if final_rank is not None:
             st.dataframe(final_rank.sort_values(by=final_rank.columns[1], ascending=False).style.format({final_rank.columns[1]: "${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_rank))
+
 
 def view_chedraui(df_c):
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
@@ -727,12 +709,9 @@ def view_chedraui(df_c):
         dff = apply_filters(dff_base, ["ARTICULO"], [fil_art])
 
         b1, b2, b3 = st.columns(3, gap="small")
-        with b1: st.button("📉 NEGATIVO / 0", on_click=tog_c, args=('c_neg_zero',), key="btn_che_nz", use_container_width=True, type="primary")
-        with b2: st.button("⚠️ DIAS INV < 10", on_click=tog_c, args=('c_under_10',), key="btn_che_u10", use_container_width=True, type="primary")
-        with b3: 
-            st.markdown(f'<div class="{"rank-green-on" if st.session_state.c_dias_inv else "dias-inv-style"}">', unsafe_allow_html=True)
-            st.button("📅 DIAS INV", on_click=tog_c, args=('c_dias_inv',), key="btn_che_dias", use_container_width=True)
-            st.markdown('</div>', unsafe_allow_html=True)
+        with b1: st.button("📉 NEGATIVO / 0", on_click=tog_c, args=('c_neg_zero',), key="btn_che_nz", use_container_width=True, type="primary" if st.session_state.c_neg_zero else "secondary")
+        with b2: st.button("⚠️ DIAS INV < 10", on_click=tog_c, args=('c_under_10',), key="btn_che_u10", use_container_width=True, type="primary" if st.session_state.c_under_10 else "secondary")
+        with b3: st.button("📅 DIAS INV", on_click=tog_c, args=('c_dias_inv',), key="btn_che_dias", use_container_width=True, type="primary" if st.session_state.c_dias_inv else "secondary")
 
         if st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -802,31 +781,18 @@ def view_chedraui(df_c):
         
         sel_st_rank = st.selectbox("Filtrar Estado (Ranking)", ["Todos"] + sorted(df_c["ESTADO"].astype(str).unique()), key="c_rnk_st")
         
-        cr1, cr2 = st.columns(2, gap="small")
-        with cr1:
-            st.markdown('<div class="btn-ranking-blue">', unsafe_allow_html=True)
-            if st.button("📊 GENERAL", key="c_rk_gen", use_container_width=True): set_c_rank('GEN')
-            st.markdown('</div>', unsafe_allow_html=True)
-        with cr2:
-            st.markdown('<div class="btn-ranking-orange">', unsafe_allow_html=True)
-            if st.button("🍝 PASTAS", key="c_rk_pas", use_container_width=True): set_c_rank('PAS')
-            st.markdown('</div>', unsafe_allow_html=True)
-        cr3, cr4 = st.columns(2, gap="small")
-        with cr3:
-            st.markdown('<div class="btn-ranking-olive">', unsafe_allow_html=True)
-            if st.button("🫒 OLIVAS", key="c_rk_oli", use_container_width=True): set_c_rank('OLI')
-            st.markdown('</div>', unsafe_allow_html=True)
-        with cr4:
-            st.markdown('<div class="btn-ranking-green">', unsafe_allow_html=True)
-            if st.button("🍃 NUTRIOLI", key="c_rk_nut", use_container_width=True): set_c_rank('NUT')
-            st.markdown('</div>', unsafe_allow_html=True)
+        cr1, cr2, cr3, cr4 = st.columns(4, gap="small")
+        with cr1: st.button("📊 GENERAL", key="c_rk_gen", on_click=set_c_rank, args=('GEN',), use_container_width=True, type="primary" if st.session_state.c_rank_gen else "secondary")
+        with cr2: st.button("🍝 PASTAS", key="c_rk_pas", on_click=set_c_rank, args=('PAS',), use_container_width=True, type="primary" if st.session_state.c_rank_pas else "secondary")
+        with cr3: st.button("🫒 OLIVAS", key="c_rk_oli", on_click=set_c_rank, args=('OLI',), use_container_width=True, type="primary" if st.session_state.c_rank_oli else "secondary")
+        with cr4: st.button("🍃 NUTRIOLI", key="c_rk_nut", on_click=set_c_rank, args=('NUT',), use_container_width=True, type="primary" if st.session_state.c_rank_nut else "secondary")
 
         dff_rank = df_c.copy()
         if sel_st_rank != "Todos": dff_rank = dff_rank[dff_rank["ESTADO"].astype(str) == sel_st_rank]
 
         list_gen = ["Vinagre Oli Nutrioli Balsámico 250 ml (3795515)", "Aceite Sabrosano Mixto 850 ML (3691244)", "Aceite Mi Sazón Vegetal 800 ML (3775895)", "Pps Nutrioli Fusilli Integral (3878678)", "Aceite Ave Soya-Canola 850 ML (3696190)", "Pps Nutrioli Spaguetti 200 (3878673)", "Pps Nutrioli Fusilli Verduras (3878676)", "Pps Nutrioli Fideo 200 Gr (3878671)", "Aceite Nutrioli Antigoteo 700 ML (3738492)", "Pps Nutrioli Spaguetti Integra (3878677)", "Pps Nutrioli Codo Verduras 200 (3878675)", "Pps Nutrioli Codo 200 Gr (3878674)", "Aceite Nutrioli Protect Defensas 850 ml (3828176)", "Pps Nutrioli Fusilli 450 (3878672)", "Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Aceite Gran Tradición Soya-Canola 800 ML (3009894)", "Aceite Nutrioli Protect Mente 850 Ml (3009960)", "Aceite De Soya Nutrioli Bot 850 Ml (3132396)", "Ace Oliva Puro Oli BOT 500 Ml (3570614)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite De Soya Nutrioli Bot 400 Ml (3590824)", "Aceite Mi Sazón Mixto 400 ML", "Aceite Aerosol Nutrioli Soya Lata 180 Gr (3317342)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite Aerosol Ave Mixto 170 Gr (3693814)", "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Nutrioli Soya 850 ML (3676715)", "Aceite Sabrosano Rinde + 850 ML (3782858)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)", "Aceite Nutrioli 850+Pps Fusill (3880416)", "Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
         list_pas = ["Pps Nutrioli Fusilli Integral (3878678)", "Pps Nutrioli Spaguetti 200 (3878673)", "Pps Nutrioli Fusilli Verduras (3878676)", "Pps Nutrioli Fideo 200 Gr (3878671)", "Pps Nutrioli Spaguetti Integra (3878677)", "Pps Nutrioli Codo Verduras 200 (3878675)", "Pps Nutrioli Codo 200 Gr (3878674)", "Pps Nutrioli Fusilli 450 (3878672)", "Aceite Nutrioli 850+Pps Fusill (3880416)", "Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
-        list_oli = ["Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)"]
+        list_oli = ["Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Ace Oliva Puro Oli BOT 500 Ml (3570614)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)"]
         list_nut = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
 
         target_list = []
@@ -861,7 +827,7 @@ elif st.session_state.active_retailer == 'CHEDRAUI':
 
 # --- 10. PIE DE PÁGINA ---
 st.divider()
-if st.button("🗑️ LIMPIAR MEMORIA / RESET", use_container_width=True):
+if st.button("🗑️ LIMPIAR MEMORIA / RESET", use_container_width=True, type="secondary"):
     if not st.session_state.confirm_reset:
         st.session_state.confirm_reset = True
         st.error("⚠️ ¡CONFIRMACIÓN REQUERIDA! Haz clic de nuevo para resetear todo.")
