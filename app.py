@@ -17,7 +17,7 @@ st.set_page_config(
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
 CACHE_CONFIG = {'ttl': 3600, 'max_entries': 10, 'show_spinner': False}
 
-# URLs de Datos (FRESKO ELIMINADO)
+# URLs de Datos (FRESKO ELIMINADO Definitivamente)
 URLS_DB = {
     "SORIANA": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/SORIANA.xlsx",
     "WALMART": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/WALMART.xlsx",
@@ -200,7 +200,7 @@ st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 html, body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; }}
-.block-container {{ padding-top: 1rem !important; padding-bottom: 2rem !important; padding-left: 1rem !important; padding-right: 1rem !important; max-width: 100% !important; }}
+.block-container {{ padding-top: 0.5rem !important; padding-bottom: 2rem !important; padding-left: 1rem !important; padding-right: 1rem !important; max-width: 100% !important; }}
 .kpi-card {{ background: white; border: 1px solid #e0e0e0; border-radius: 12px; padding: 15px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.05); margin-bottom: 15px; height: 100%; display: flex; flex-direction: column; justify-content: center; transition: transform 0.2s; }}
 .kpi-card:active {{ transform: scale(0.98); }}
 .kpi-title {{ font-size: 0.8rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }}
@@ -231,19 +231,13 @@ div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth
 </style>
 """, unsafe_allow_html=True)
 
-# --- 6. NAVEGACIÓN PRINCIPAL (Ajustada a 3 columnas) ---
-col1, col2, col3 = st.columns(3, gap="small")
-with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True, key="nav_sor")
-with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True, key="nav_wal")
-with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True, key="nav_che")
+# === AQUÍ ESTÁ EL CAMBIO SOLICITADO ===
 
-st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
-
-# --- 7. HEADER GLOBAL ---
+# --- 6. HEADER GLOBAL (Ahora es lo PRIMERO en aparecer) ---
 c_head1, c_head2 = st.columns([1, 5])
 with c_head1:
     try: st.image("ragasa_logo.png", use_container_width=True)
-    except: st.write("📦")
+    except: st.write("📦 Logo Ragasa")
 with c_head2:
     st.markdown("""
         <div style='display: flex; flex-direction: column; justify-content: center; height: 100%;'>
@@ -252,12 +246,23 @@ with c_head2:
         </div>
     """, unsafe_allow_html=True)
 
+# Barra de estado de conexión (pegada al header)
 status_txt = 'CONECTADO' if st.session_state.is_online else 'OFFLINE'
 status_color = "#28a745" if st.session_state.is_online else "#dc3545"
-st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
+st.markdown(f"<div style='text-align:right; font-size:0.7rem; color:{status_color}; font-weight:bold; margin-top:-10px; margin-bottom:5px;'>● {status_txt}</div>", unsafe_allow_html=True)
 
 
-# --- 8. VISTAS POR RETAILER ---
+# --- 7. NAVEGACIÓN PRINCIPAL (Aparece DESPUÉS del Logo) ---
+col1, col2, col3 = st.columns(3, gap="small")
+with col1: st.button("SORIANA", on_click=set_retailer, args=("SORIANA",), use_container_width=True, key="nav_sor")
+with col2: st.button("WALMART", on_click=set_retailer, args=("WALMART",), use_container_width=True, key="nav_wal")
+with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True, key="nav_che")
+
+# Línea divisoria decorativa
+st.markdown("<hr style='margin: 15px 0; border: 0; border-top: 1px solid #eee;'>", unsafe_allow_html=True)
+
+
+# --- 8. VISTAS POR RETAILER (Funciones intactas) ---
 
 def view_soriana(df_s):
     st.markdown(f"<div class='retailer-header' style='background-color: {RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
@@ -821,7 +826,7 @@ def view_chedraui(df_c):
 
         list_gen = ["Vinagre Oli Nutrioli Balsámico 250 ml (3795515)", "Aceite Sabrosano Mixto 850 ML (3691244)", "Aceite Mi Sazón Vegetal 800 ML (3775895)", "Pps Nutrioli Fusilli Integral (3878678)", "Aceite Ave Soya-Canola 850 ML (3696190)", "Pps Nutrioli Spaguetti 200 (3878673)", "Pps Nutrioli Fusilli Verduras (3878676)", "Pps Nutrioli Fideo 200 Gr (3878671)", "Aceite Nutrioli Antigoteo 700 ML (3738492)", "Pps Nutrioli Spaguetti Integra (3878677)", "Pps Nutrioli Codo Verduras 200 (3878675)", "Pps Nutrioli Codo 200 Gr (3878674)", "Aceite Nutrioli Protect Defensas 850 ml (3828176)", "Pps Nutrioli Fusilli 450 (3878672)", "Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Aceite Gran Tradición Soya-Canola 800 ML (3009894)", "Aceite Nutrioli Protect Mente 850 Ml (3009960)", "Aceite De Soya Nutrioli Bot 850 Ml (3132396)", "Ace Oliva Puro Oli BOT 500 Ml (3570614)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite De Soya Nutrioli Bot 400 Ml (3590824)", "Aceite Mi Sazón Mixto 400 ML", "Aceite Aerosol Nutrioli Soya Lata 180 Gr (3317342)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite Aerosol Ave Mixto 170 Gr (3693814)", "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Nutrioli Soya 850 ML (3676715)", "Aceite Sabrosano Rinde + 850 ML (3782858)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)", "Aceite Nutrioli 850+Pps Fusill (3880416)", "Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
         list_pas = ["Pps Nutrioli Fusilli Integral (3878678)", "Pps Nutrioli Spaguetti 200 (3878673)", "Pps Nutrioli Fusilli Verduras (3878676)", "Pps Nutrioli Fideo 200 Gr (3878671)", "Pps Nutrioli Spaguetti Integra (3878677)", "Pps Nutrioli Codo Verduras 200 (3878675)", "Pps Nutrioli Codo 200 Gr (3878674)", "Pps Nutrioli Fusilli 450 (3878672)", "Aceite Nutrioli 850+Pps Fusill (3880416)", "Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
-        list_oli = ["Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Ace Oliva Puro Oli BOT 500 Ml (3570614)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)"]
+        list_oli = ["Ace Oliva EV Oli BOT 750 Ml (3284693)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 500 Ml (3368446)", "Aceite Oliva Puro Oli Bote 750 Ml (3570620)", "Ace Oliva EV Oli BOT 250 Ml (3284690)", "Aceite Oli Extra Virgen 500 Ml (3646332)", "Aceite de Oliva Oli Nutrioli 250 Ml (3679970)", "Aceite Aerosol Oli Oliva 145 Ml (3679971)", "Ace Oliva EV Oli BOT 500 Ml (3428657)"]
         list_nut = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
 
         target_list = []
