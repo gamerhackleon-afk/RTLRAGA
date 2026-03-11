@@ -8,7 +8,7 @@ from io import BytesIO
 
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
-    page_title="Retail Manager", 
+    page_title="Dashboard de Inventarios", 
     page_icon="📊", 
     layout="wide", 
     initial_sidebar_state="collapsed"
@@ -17,7 +17,7 @@ st.set_page_config(
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
 CACHE_CONFIG = {'ttl': 3600, 'max_entries': 10, 'show_spinner': False}
 
-# URLs de Datos (FRESKO ELIMINADO DEFINITIVAMENTE)
+# URLs de Datos
 URLS_DB = {
     "SORIANA": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/SORIANA.xlsx",
     "WALMART": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/WALMART.xlsx",
@@ -130,22 +130,37 @@ def load_sor(path):
         if source is None: return None
         df = pd.read_excel(source, engine='openpyxl')
         while df.shape[1] < 31: df[f"COL_AUTO_{df.shape[1]}"] = 0
+        
+        # AJUSTE DE COLUMNAS SORIANA SEGÚN REQUERIMIENTO:
+        # A(0)=RESURTIMIENTO, C(2)=CODIGO, D(3)=DESCRIPCION, E(4)=NO_TIENDA, 
+        # F(5)=TIENDA, G(6)=CIUDAD, H(7)=ESTADO, I(8)=FORMATO
         df.rename(columns={
-            df.columns[2]: "CODIGO", df.columns[3]: "DESCRIPCION", df.columns[4]: "CATEGORIA",
-            df.columns[5]: "NO_TIENDA", df.columns[6]: "TIENDA", df.columns[7]: "CIUDAD",
-            df.columns[8]: "ESTADO", df.columns[9]: "FORMATO", 
-            df.columns[30]: "DIAS_INV", df.columns[28]: "INV_CAJAS", df.columns[24]: "SO_$", df.columns[0]: "RESURTIMIENTO"
+            df.columns[0]: "RESURTIMIENTO",
+            df.columns[2]: "CODIGO", 
+            df.columns[3]: "DESCRIPCION", 
+            df.columns[4]: "NO_TIENDA", 
+            df.columns[5]: "TIENDA", 
+            df.columns[6]: "CIUDAD",
+            df.columns[7]: "ESTADO", 
+            df.columns[8]: "FORMATO", 
+            df.columns[30]: "DIAS_INV", 
+            df.columns[28]: "INV_CAJAS", 
+            df.columns[24]: "SO_$"
         }, inplace=True)
+        
         df["CODIGO"] = df["CODIGO"].astype(str).str.replace(r'\.0*$', '', regex=True)
         cols_num = ["DIAS_INV", "INV_CAJAS", "SO_$"]
         for c in cols_num: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+        
+        # Asegurar suma de 4 semanas
         cols_4sem = [df.columns[21], df.columns[22], df.columns[23], df.columns[24]]
         for c in cols_4sem: df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
         df['SO_4SEM'] = df[cols_4sem].sum(axis=1) 
         df['SIN_VTA'] = (df['SO_4SEM'] == 0)
         df['VTA_PROM'] = df['SO_4SEM'] 
         return optimize_floats(df)
-    except Exception: return None
+    except Exception as e: 
+        return None
 
 @st.cache_data(**CACHE_CONFIG)
 def load_wal(path):
@@ -265,8 +280,8 @@ with c_head1:
 with c_head2:
     st.markdown("""
         <div style='display: flex; flex-direction: column; justify-content: center; height: 100%;'>
-            <h2 style='margin:0; font-weight: 800; color: #333;'>RETAIL MANAGER</h2>
-            <p style='margin:0; font-size: 0.9rem; color: #666;'>Control de Inventarios y Ventas</p>
+            <h2 style='margin:0; font-weight: 800; color: #333;'>DASHBOARD DE INVENTARIOS</h2>
+            <p style='margin:0; font-size: 0.9rem; color: #666;'>desarrollada por Alexis</p>
         </div>
     """, unsafe_allow_html=True)
 
@@ -319,11 +334,11 @@ def view_soriana(df_s):
             c1, c2 = st.columns(2)
             with c1:
                 opts_res = ["Todos"] + sorted(df_s["RESURTIMIENTO"].astype(str).unique())
-                def_res = ["1.0"] if "1.0" in opts_res else ["Todos"]
+                def_res = ["1.0"] if "1.0" in opts_res else (["1"] if "1" in opts_res else ["Todos"])
+                
                 fil_res = st.multiselect("Resurtible", opts_res, default=def_res)
                 fil_nda = st.multiselect("No Tienda", sorted(df_s["NO_TIENDA"].astype(str).unique()))
                 fil_nom = st.multiselect("Nombre", sorted(df_s["TIENDA"].astype(str).unique()))
-                fil_cat = st.multiselect("Categoría", sorted(df_s["CATEGORIA"].astype(str).unique()))
             with c2:
                 fil_cd = st.multiselect("Ciudad", sorted(df_s["CIUDAD"].astype(str).unique()))
                 fil_edo = st.multiselect("Estado", sorted(df_s["ESTADO"].astype(str).unique()))
@@ -331,8 +346,8 @@ def view_soriana(df_s):
                 fil_art = st.multiselect("Artículo", sorted(df_s["DESCRIPCION"].astype(str).unique()))
 
         dff = apply_filters(df_s, 
-            ["RESURTIMIENTO", "NO_TIENDA", "TIENDA", "CATEGORIA", "CIUDAD", "ESTADO", "FORMATO", "DESCRIPCION"], 
-            [fil_res if "Todos" not in fil_res else None, fil_nda, fil_nom, fil_cat, fil_cd, fil_edo, fil_fmt, fil_art]
+            ["RESURTIMIENTO", "NO_TIENDA", "TIENDA", "CIUDAD", "ESTADO", "FORMATO", "DESCRIPCION"], 
+            [fil_res if "Todos" not in fil_res else None, fil_nda, fil_nom, fil_cd, fil_edo, fil_fmt, fil_art]
         )
 
         b1, b2, b3 = st.columns(3, gap="small")
@@ -406,7 +421,7 @@ def view_soriana(df_s):
             c_kpi, c_chart = st.columns([1, 2])
             with c_kpi:
                 total_so = dff['SO_$'].sum()
-                st.markdown(f"<div class='kpi-card' style='height: 350px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card' style='height: 450px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             
             with c_chart:
                 chart_data = dff.copy()
@@ -422,10 +437,12 @@ def view_soriana(df_s):
                     fig = px.pie(pie_df, values='SO_$', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
                     fig.update_traces(
                         textposition='outside', textinfo='label+percent+value',
-                        texttemplate='<b>%{label}</b><br>%{percent:.0%}<br>$%{value:,.0f}',
+                        # AQUÍ EL CAMBIO A 2 LÍNEAS PARA COMPACTAR TEXTO Y PREVENIR RECORTES
+                        texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
-                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    # AQUÍ EL CAMBIO DE MÁRGENES Y ALTURA (Márgenes moderados para mantener tamaño ideal de dona)
+                    fig.update_layout(showlegend=False, margin=dict(t=50, b=50, l=100, r=100), height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", uniformtext_minsize=9, uniformtext_mode='hide')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
@@ -618,7 +635,7 @@ def view_walmart(df_w):
             total_so = dff['SO_$'].sum()
             
             with c_kpi:
-                st.markdown(f"<div class='kpi-card' style='height: 350px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card' style='height: 450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             
             with c_chart:
                 chart_data = dff.copy()
@@ -635,10 +652,10 @@ def view_walmart(df_w):
                     fig = px.pie(pie_df, values='SO_$', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
                     fig.update_traces(
                         textposition='outside', textinfo='label+percent+value',
-                        texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
+                        texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
-                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", uniformtext_minsize=8, uniformtext_mode='hide')
+                    fig.update_layout(showlegend=False, margin=dict(t=50, b=50, l=100, r=100), height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", uniformtext_minsize=9, uniformtext_mode='hide')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
@@ -744,7 +761,7 @@ def view_chedraui(df_c):
             c_kpi, c_chart = st.columns([1, 2])
             with c_kpi:
                 total_so = dff['SELL_OUT'].sum()
-                st.markdown(f"<div class='kpi-card' style='height: 350px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='kpi-card' style='height: 450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
             with c_chart:
                 chart_data = dff.copy()
                 chart_data['Category'] = chart_data['ARTICULO'].apply(get_chedraui_category)
@@ -760,10 +777,10 @@ def view_chedraui(df_c):
                     fig = px.pie(pie_df, values='SELL_OUT', names='Category', color='Category', color_discrete_map=color_map, hole=0.45)
                     fig.update_traces(
                         textposition='outside', textinfo='label+percent+value',
-                        texttemplate='%{label}<br>%{percent:.0%}<br>$%{value:,.0f}',
+                        texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',
                         hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
                     )
-                    fig.update_layout(showlegend=False, margin=dict(t=20, b=20, l=40, r=40), height=350, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                    fig.update_layout(showlegend=False, margin=dict(t=50, b=50, l=100, r=100), height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", uniformtext_minsize=9, uniformtext_mode='hide')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
 
