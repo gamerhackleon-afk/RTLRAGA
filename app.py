@@ -341,6 +341,38 @@ def load_che(path):
     except Exception:
         return None
 
+
+# ══════════════════════════════════════════════════════════════════════
+# LISTAS DE PRODUCTOS — constantes de módulo, se definen UNA SOLA VEZ
+# No se recalculan en cada render (evita crear listas de 30+ strings
+# en cada click del usuario)
+# ══════════════════════════════════════════════════════════════════════
+_SOR_DIAS_PROD = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE SABROSANO 850 ML","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE OLIVA OLI PURO SPRAY 145 ML","ACEITE OLIVA OLI EV SPRAY 145 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR","VINAGRE BALSAMICO 250ML"]
+_SOR_RANK_GEN  = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE COMESTIBLE GRAN TRADICION 900 ML","ACEITE COMESTIBLE SABROSANO +30 850 ML","ACEITE OLIVA OLI PURO SPRAY 145 ML","JUSTO 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI DHA 850 ML","ACEITE COMESTIBLE SABROSANO 850 ML","SABROSANO RINDE+ 850 ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE DE SOYA NUTRIOLI BOT 850 ML","VINAGRE BALSAMICO 250ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
+_SOR_RANK_PAS  = ["PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
+_SOR_RANK_OLI  = ["ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE OLIVA OLI PURO SPRAY 145 ML"]
+_SOR_RANK_NUT  = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML"]
+
+_WAL_DIAS_PROD = ["NUTRIOLI ACEITE PURO DE SOYA 946 ML","NUTRIOLI ACEITE PURO DE SOYA 400 ML","SABROSANO ACEITE 850ML MANTEQUILLA","ACEITE COMESTIBLE GRAN TRADICION 850ML","ACEITE SOYA NUTRIOLI ANTIGOTEO 700ML","ACEITE NUTRIOLI DEFENSAS 850 ML","NUTRIOLI ACEITE PROTECT MENTE 850 ML","NUTRIOLI SPRAY 180 ML","AVE AEROSOL 170GR","OLI SPRAY ACEITE DE OLIVA 145ML","OLI SPRAY ACEITE DE OLIVA EV 145ML","OLI DE NUTRIOLI EXTRA VIRGEN 250ML","OLI DE NUTRIOLI ACEITE DE OLIVA 500ML","OLI DE NUTRIOLI ACEITE DE OLIVA 750ML","OLI ACEITE DE OLIVA COCINA 250ML","ACEITE DE OLIVA EXTRA VIRGEN OLI DE NUTR","ACEITE OLI DE OLIVA EX VIRGEN ORGANICO","OLI NUTRIOLI VINAGRE BALSAMICO MODENA250","VINAGRE DE JEREZ 250 ML","VINAGRE DE MANZANA ECOLOGICO","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO AL  AJO 250 ML","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","VINAGRE DE VINO FRAMBUESA","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE OLIVA 100 PURO CON AJO","BORGES ACEITE OLIVA EXTRA SUAVE","BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES VINAGRE BALSAMICO 250ML","BORGES VINAGRE DE VINOTINTO","BORGES VINAGRE VINO BLANCO","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE OLIVA AL  ROMERO FRESCO","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE SOJA JENGIBRE"]
+
+_CHE_RANK_GEN  = ["Vinagre Oli Nutrioli Balsámico 250 ml (3795515)","Aceite Sabrosano Mixto 850 ML (3691244)","Aceite Mi Sazón Vegetal 800 ML (3775895)","Pps Nutrioli Fusilli Integral (3878678)","Aceite Ave Soya-Canola 850 ML (3696190)","Pps Nutrioli Spaguetti 200 (3878673)","Pps Nutrioli Fusilli Verduras (3878676)","Pps Nutrioli Fideo 200 Gr (3878671)","Aceite Nutrioli Antigoteo 700 ML (3738492)","Pps Nutrioli Spaguetti Integra (3878677)","Pps Nutrioli Codo Verduras 200 (3878675)","Pps Nutrioli Codo 200 Gr (3878674)","Aceite Nutrioli Protect Defensas 850 ml (3828176)","Pps Nutrioli Fusilli 450 (3878672)","Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli Bote 750 Ml (3570620)","Ace Oliva EV Oli BOT 500 Ml (3368446)","Aceite Gran Tradición Soya-Canola 800 ML (3009894)","Aceite Nutrioli Protect Mente 850 Ml (3009960)","Aceite De Soya Nutrioli Bot 850 Ml (3132396)","Ace Oliva Puro Oli BOT 500 Ml (3570614)","Ace Oliva EV Oli BOT 250 Ml (3284690)","Aceite De Soya Nutrioli Bot 400 Ml (3590824)","Aceite Mi Sazón Mixto 400 ML","Aceite Aerosol Nutrioli Soya Lata 180 Gr (3317342)","Aceite Oli Extra Virgen 500 Ml (3646332)","Aceite Aerosol Ave Mixto 170 Gr (3693814)","Aceite de Oliva Oli Nutrioli 250 Ml (3679970)","Aceite Nutrioli Soya 850 ML (3676715)","Aceite Sabrosano Rinde + 850 ML (3782858)","Aceite Aerosol Oli Oliva 145 Ml (3679971)","Ace Oliva EV Oli BOT 500 Ml (3428657)","Aceite Nutrioli 850+Pps Fusill (3880416)","Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
+_CHE_RANK_PAS  = ["Pps Nutrioli Fusilli Integral (3878678)","Pps Nutrioli Spaguetti 200 (3878673)","Pps Nutrioli Fusilli Verduras (3878676)","Pps Nutrioli Fideo 200 Gr (3878671)","Pps Nutrioli Spaguetti Integra (3878677)","Pps Nutrioli Codo Verduras 200 (3878675)","Pps Nutrioli Codo 200 Gr (3878674)","Pps Nutrioli Fusilli 450 (3878672)","Aceite Nutrioli 850+Pps Fusill (3880416)","Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
+_CHE_RANK_OLI  = ["Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli Bote 750 Ml (3570620)","Ace Oliva EV Oli BOT 500 Ml (3368446)","Ace Oliva Puro Oli BOT 500 Ml (3570614)","Ace Oliva EV Oli BOT 250 Ml (3284690)","Aceite Oli Extra Virgen 500 Ml (3646332)","Aceite de Oliva Oli Nutrioli 250 Ml (3679970)","Aceite Aerosol Oli Oliva 145 Ml (3679971)","Ace Oliva EV Oli BOT 500 Ml (3428657)"]
+_CHE_RANK_NUT  = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
+
+# Sets precalculados para isin() — O(1) lookup en lugar de O(n) en lista
+_SOR_RANK_GEN_SET  = frozenset(s.strip() for s in _SOR_RANK_GEN)
+_SOR_RANK_PAS_SET  = frozenset(s.strip() for s in _SOR_RANK_PAS)
+_SOR_RANK_OLI_SET  = frozenset(s.strip() for s in _SOR_RANK_OLI)
+_SOR_RANK_NUT_SET  = frozenset(s.strip() for s in _SOR_RANK_NUT)
+_CHE_RANK_GEN_SET  = frozenset(s.strip() for s in _CHE_RANK_GEN)
+_CHE_RANK_PAS_SET  = frozenset(s.strip() for s in _CHE_RANK_PAS)
+_CHE_RANK_OLI_SET  = frozenset(s.strip() for s in _CHE_RANK_OLI)
+_CHE_RANK_NUT_SET  = frozenset(s.strip() for s in _CHE_RANK_NUT)
+# Patrones normalizados para dias_prod (pre-strip una vez)
+_SOR_DIAS_PROD_NORM = [s.upper().replace("&NBSP;","").replace(" ","") for s in _SOR_DIAS_PROD]
+_WAL_DIAS_PROD_NORM = [s.upper().replace("&NBSP;","").replace(" ","") for s in _WAL_DIAS_PROD]
+
 # --- 5. CARGA PARALELA DE LAS 3 BASES ---
 def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
     """
@@ -357,12 +389,23 @@ def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
 
 def _parse_raw(key: str, buf: BytesIO):
     """
-    Fase 2: parseo CPU — sin red.
-    Se puede solapar con otras descargas activas.
+    Fase 2: parseo CPU sobre el buf ya descargado — sin tocar la red.
+    Recibe el BytesIO directamente para evitar doble descarga.
     """
-    loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
+    NEEDED = {"SORIANA": 17, "WALMART": 15, "CHEDRAUI": 13}
     try:
-        df = loaders[key](URLS_DB[key])   # load_* ya gestiona el buf internamente vía download_file
+        buf.seek(0)
+        try:
+            df = pd.read_excel(buf, engine='calamine')
+        except Exception:
+            buf.seek(0)
+            df = pd.read_excel(buf, engine='openpyxl')
+        if len(df.columns) < NEEDED[key]:
+            return key, None, f"Columnas insuficientes ({len(df.columns)} < {NEEDED[key]})"
+        # Reusar el loader completo pasando el buf como archivo local
+        buf.seek(0)
+        loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
+        df = loaders[key](buf)
         if df is None or not isinstance(df, pd.DataFrame) or df.empty:
             return key, None, "Archivo vacío o sin columnas válidas."
         return key, df, None
@@ -743,6 +786,17 @@ def get_cached_or_upload(key, uploader_key, load_func):
         return df
     return None
 
+
+@st.cache_data(show_spinner=False, ttl=14400)
+def _unique_sorted(series_hash: int, vals_tuple: tuple) -> list:
+    """Cachea sorted(unique()) — se recalcula solo si cambia el contenido del df."""
+    return sorted(vals_tuple)
+
+def _us(series) -> list:
+    """Shorthand: unique sorted con caché por contenido."""
+    vals = tuple(series.dropna().unique())
+    return _unique_sorted(hash(vals), vals)
+
 # --- 13. VISTAS ---
 def view_soriana(df_s):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
@@ -775,16 +829,16 @@ def view_soriana(df_s):
         with st.expander("🔍 Filtros Avanzados", expanded=True):
             c1, c2 = st.columns(2)
             with c1:
-                opts_res = ["Todos"] + sorted(df_s["RESURTIMIENTO"].dropna().unique())
+                opts_res = ["Todos"] + _us(df_s["RESURTIMIENTO"])
                 def_res  = ["1.0"] if "1.0" in opts_res else (["1"] if "1" in opts_res else ["Todos"])
                 fil_res  = st.multiselect("Resurtible", opts_res, default=def_res)
-                fil_nda  = st.multiselect("No Tienda", sorted(df_s["NO_TIENDA"].dropna().unique()))
-                fil_nom  = st.multiselect("Nombre",    sorted(df_s["TIENDA"].dropna().unique()))
+                fil_nda  = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]))
+                fil_nom  = st.multiselect("Nombre",    _us(df_s["TIENDA"]))
             with c2:
-                fil_cd  = st.multiselect("Ciudad",   sorted(df_s["CIUDAD"].dropna().unique()))
-                fil_edo = st.multiselect("Estado",   sorted(df_s["ESTADO"].dropna().unique()))
-                fil_fmt = st.multiselect("Formato",  sorted(df_s["FORMATO"].dropna().unique()))
-                fil_art = st.multiselect("Artículo", sorted(df_s["DESCRIPCION"].dropna().unique()))
+                fil_cd  = st.multiselect("Ciudad",   _us(df_s["CIUDAD"]))
+                fil_edo = st.multiselect("Estado",   _us(df_s["ESTADO"]))
+                fil_fmt = st.multiselect("Formato",  _us(df_s["FORMATO"]))
+                fil_art = st.multiselect("Artículo", _us(df_s["DESCRIPCION"]))
 
         dff = apply_filters(df_s,
             ["RESURTIMIENTO","NO_TIENDA","TIENDA","CIUDAD","ESTADO","FORMATO","DESCRIPCION"],
@@ -806,7 +860,7 @@ def view_soriana(df_s):
 
         elif st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
-            target_list = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE SABROSANO 850 ML","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE OLIVA OLI PURO SPRAY 145 ML","ACEITE OLIVA OLI EV SPRAY 145 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR","VINAGRE BALSAMICO 250ML"]
+            target_list = _SOR_DIAS_PROD
             desc_clean_col = dff["DESCRIPCION"].str.upper().str.replace(r'&NBSP;',' ',regex=True).str.replace(" ","",regex=False)
             res_rows = []
             for item in target_list:
@@ -824,7 +878,7 @@ def view_soriana(df_s):
             st.subheader("📅 Reporte Días Inventario")
             val_nut = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE DE SOYA NUTRIOLI BOT 850 ML")
             val_sab = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE COMESTIBLE SABROSANO 850 ML")
-            mask_pastas = dff["DESCRIPCION"].str.contains("PASTA", case=False, na=False)
+            mask_pastas = dff["DESC_NORM"].str.contains("PASTA", na=False)  # Fix4: usa DESC_NORM
             val_pas = dff.loc[mask_pastas,"DIAS_INV"].mean() if mask_pastas.any() else 0
             k1,k2,k3 = st.columns(3)
             k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
@@ -871,8 +925,8 @@ def view_soriana(df_s):
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         sm1,sm2 = st.columns(2)
-        with sm1: sel_s_rank_st  = st.multiselect("Estado (Ranking)",  sorted(df_s["ESTADO"].dropna().unique()),  key="s_rnk_st")
-        with sm2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].dropna().unique()), key="s_rnk_fmt")
+        with sm1: sel_s_rank_st  = st.multiselect("Estado (Ranking)",  _us(df_s["ESTADO"]),  key="s_rnk_st")
+        with sm2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", _us(df_s["FORMATO"]), key="s_rnk_fmt")
         sr1,sr2,sr3,sr4 = st.columns(4,gap="small")
         with sr1: st.button("📊 GENERAL",  on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if s_rank_gen else "secondary")
         with sr2: st.button("🍝 PASTAS",   on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if s_rank_pas else "secondary")
@@ -880,10 +934,10 @@ def view_soriana(df_s):
         with sr4: st.button("🍃 NUTRIOLI", on_click=set_s_rank, args=('NUT',), use_container_width=True, type="primary" if s_rank_nut else "secondary")
 
         dff_s_rank = apply_filters(df_s,["ESTADO","FORMATO"],[sel_s_rank_st,sel_s_rank_fmt])
-        list_s_gen = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE COMESTIBLE GRAN TRADICION 900 ML","ACEITE COMESTIBLE SABROSANO +30 850 ML","ACEITE OLIVA OLI PURO SPRAY 145 ML","JUSTO 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI DHA 850 ML","ACEITE COMESTIBLE SABROSANO 850 ML","SABROSANO RINDE+ 850 ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE DE SOYA NUTRIOLI BOT 850 ML","VINAGRE BALSAMICO 250ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
-        list_s_pas = ["PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
-        list_s_oli = ["ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE OLIVA OLI PURO SPRAY 145 ML"]
-        list_s_nut = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML"]
+        list_s_gen = _SOR_RANK_GEN
+        list_s_pas = _SOR_RANK_PAS
+        list_s_oli = _SOR_RANK_OLI
+        list_s_nut = _SOR_RANK_NUT
         target_list_s=[]; rank_title_s=""
         if   s_rank_gen: target_list_s=list_s_gen; rank_title_s="VENTA GENERAL ($)"
         elif s_rank_pas: target_list_s=list_s_pas; rank_title_s="VENTA PASTAS ($)"
@@ -919,11 +973,11 @@ def view_walmart(df_w):
             with c1:
                 marca_opts = sorted([m for m in df_w["MARCA"].dropna().unique() if m.strip().upper() not in ["NUTRIOLI + PASTA","NUTRIOLI  PASTA","NUTRIOLI PASTA"]])
                 sel_marca = st.multiselect("Marca", marca_opts)
-                sel_state = st.multiselect("Estado", sorted(df_w["ESTADO"].dropna().unique()))
+                sel_state = st.multiselect("Estado", _us(df_w["ESTADO"]))
             with c2:
-                unique_stores = sorted(df_w[df_w["ESTADO"].isin(sel_state)]["TIENDA"].dropna().unique()) if sel_state else sorted(df_w["TIENDA"].dropna().unique())
+                unique_stores = _us(df_w[df_w["ESTADO"].isin(sel_state)]["TIENDA"]) if sel_state else _us(df_w["TIENDA"])
                 sel_store = st.multiselect("Tienda",  unique_stores)
-                sel_fmt   = st.multiselect("Formato", sorted(df_w["FORMATO"].dropna().unique()))
+                sel_fmt   = st.multiselect("Formato", _us(df_w["FORMATO"]))
             with c3:
                 excluidas_clean = {"ACEITE VEGETAL SABROSANO RINDE MAS 850ML","OLI SPRAY ACEITE DE OLIVA 145ML","ACEITE MIXTO GRAN TRADICION 1L","ACEITE GRAN TRADICION 900ML","NUTRIOLI 946 ML +PASTA CODO 200G","NUTRIOLI 946 ML +FUSILLI VERDURAS 200G","NUTRIOLI SPAGUETTI ESENCIAL 200G","NUTRIOLI FIDEO ESENCIAL 200G","NUTRIOLI CODO ESENCIAL 200G","NUTRIOLI FUSILLI VERDURAS 200G","NUTRIOLI CODO VERDURAS 200G"}
                 sel_prod = st.multiselect("Artículo", sorted([p for p in df_w["DESCRIPCION"].dropna().unique() if p.strip().upper() not in excluidas_clean]))
@@ -959,7 +1013,7 @@ def view_walmart(df_w):
 
         if st.session_state.w_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
-            target_list = ["NUTRIOLI ACEITE PURO DE SOYA 946 ML","NUTRIOLI ACEITE PURO DE SOYA 400 ML","SABROSANO ACEITE 850ML MANTEQUILLA","ACEITE COMESTIBLE GRAN TRADICION 850ML","ACEITE SOYA NUTRIOLI ANTIGOTEO 700ML","ACEITE NUTRIOLI DEFENSAS 850 ML","NUTRIOLI ACEITE PROTECT MENTE 850 ML","NUTRIOLI SPRAY 180 ML","AVE AEROSOL 170GR","OLI SPRAY ACEITE DE OLIVA 145ML","OLI SPRAY ACEITE DE OLIVA EV 145ML","OLI DE NUTRIOLI EXTRA VIRGEN 250ML","OLI DE NUTRIOLI ACEITE DE OLIVA 500ML","OLI DE NUTRIOLI ACEITE DE OLIVA 750ML","OLI ACEITE DE OLIVA COCINA 250ML","ACEITE DE OLIVA EXTRA VIRGEN OLI DE NUTR","ACEITE OLI DE OLIVA EX VIRGEN ORGANICO","OLI NUTRIOLI VINAGRE BALSAMICO MODENA250","VINAGRE DE JEREZ 250 ML","VINAGRE DE MANZANA ECOLOGICO","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO AL  AJO 250 ML","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","VINAGRE DE VINO FRAMBUESA","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE OLIVA 100 PURO CON AJO","BORGES ACEITE OLIVA EXTRA SUAVE","BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES VINAGRE BALSAMICO 250ML","BORGES VINAGRE DE VINOTINTO","BORGES VINAGRE VINO BLANCO","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE OLIVA AL  ROMERO FRESCO","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE SOJA JENGIBRE"]
+            target_list = _WAL_DIAS_PROD
             desc_nospace = dff_kpi["DESCRIPCION"].str.upper().str.replace(r'&NBSP;','',regex=True).str.replace(" ","",regex=False)
             res_rows = []
             for item in target_list:
@@ -1012,8 +1066,8 @@ def view_walmart(df_w):
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         cm1,cm2 = st.columns(2)
-        with cm1: sel_st_rank  = st.multiselect("Estado (Ranking)",  sorted(df_w["ESTADO"].dropna().unique()),  key="rnk_st")
-        with cm2: sel_fmt_rank = st.multiselect("Formato (Ranking)", sorted(df_w["FORMATO"].dropna().unique()), key="rnk_fmt")
+        with cm1: sel_st_rank  = st.multiselect("Estado (Ranking)",  _us(df_w["ESTADO"]),  key="rnk_st")
+        with cm2: sel_fmt_rank = st.multiselect("Formato (Ranking)", _us(df_w["FORMATO"]), key="rnk_fmt")
         sr1,sr2,sr3,sr4 = st.columns(4,gap="small")
         with sr1: st.button("📊 GENERAL",  on_click=set_rank, args=('tiendas',),  use_container_width=True, type="primary" if w_rank_tiendas else "secondary")
         with sr2: st.button("🍝 PASTAS",   on_click=set_rank, args=('pastas',),   use_container_width=True, type="primary" if w_rank_pastas  else "secondary")
@@ -1025,13 +1079,13 @@ def view_walmart(df_w):
         if st.session_state.w_rank_tiendas:
             final_rank = dff_rank.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA TOTAL ($)'})
         elif st.session_state.w_rank_pastas:
-            df_sub = dff_rank[dff_rank["CATEGORIA"].str.contains("PASTAS",case=False,na=False)]
+            df_sub = dff_rank[dff_rank["CATEGORIA"].str.contains("PASTAS",na=False)]
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA PASTAS ($)'})
         elif st.session_state.w_rank_olivas:
-            df_sub = dff_rank[dff_rank["DESCRIPCION"].str.contains("OLI",case=False,na=False)]
+            df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("OLI",na=False)]
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA OLIVAS ($)'})
         elif st.session_state.w_nutri_top10:
-            df_sub = dff_rank[dff_rank["DESCRIPCION"].str.contains("NUTRIOLI",case=False,na=False)&dff_rank["DESCRIPCION"].str.contains("946",case=False,na=False)]
+            df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("NUTRIOLI",na=False)&dff_rank["DESC_NORM"].str.contains("946",na=False)]
             if not df_sub.empty:
                 final_rank = df_sub.groupby(["FORMATO","TIENDA","DESCRIPCION"])[['EXISTENCIA','SO_SEM_ANT','SO_$']].sum().reset_index()
                 final_rank.columns=["FORMATO","TIENDA","PRODUCTO","INVENTARIO","VTA SEM ANTERIOR ($)","SELL OUT ($)"]
@@ -1058,12 +1112,12 @@ def view_chedraui(df_c):
         with st.expander("🔍 Filtros Avanzados", expanded=True):
             c1,c2 = st.columns(2)
             with c1:
-                fil_no  = st.multiselect("No Tienda",  sorted(df_c["NO_TIENDA"].dropna().unique()))
-                fil_ti  = st.multiselect("Tienda",     sorted(df_c["TIENDA"].dropna().unique()))
-                fil_cat = st.multiselect("Categoría",  sorted(df_c["CATEGORIA"].dropna().unique()))
+                fil_no  = st.multiselect("No Tienda",  _us(df_c["NO_TIENDA"]))
+                fil_ti  = st.multiselect("Tienda",     _us(df_c["TIENDA"]))
+                fil_cat = st.multiselect("Categoría",  _us(df_c["CATEGORIA"]))
             with c2:
-                fil_ed  = st.multiselect("Estado",     sorted(df_c["ESTADO"].dropna().unique()))
-                fil_art = st.multiselect("Artículo",   sorted(df_c["ARTICULO"].dropna().unique()))
+                fil_ed  = st.multiselect("Estado",     _us(df_c["ESTADO"]))
+                fil_art = st.multiselect("Artículo",   _us(df_c["ARTICULO"]))
 
         dff_base = apply_filters(df_c,["NO_TIENDA","TIENDA","ESTADO","CATEGORIA"],[fil_no,fil_ti,fil_ed,fil_cat])
         dff      = apply_filters(dff_base,["ARTICULO"],[fil_art])
@@ -1129,7 +1183,7 @@ def view_chedraui(df_c):
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
-        sel_st_rank = st.selectbox("Filtrar Estado (Ranking)", ["Todos"]+sorted(df_c["ESTADO"].dropna().unique()), key="c_rnk_st")
+        sel_st_rank = st.selectbox("Filtrar Estado (Ranking)", ["Todos"]+_us(df_c["ESTADO"]), key="c_rnk_st")
         cr1,cr2,cr3,cr4 = st.columns(4,gap="small")
         with cr1: st.button("📊 GENERAL",  on_click=set_c_rank, args=('GEN',), use_container_width=True, type="primary" if c_rank_gen else "secondary")
         with cr2: st.button("🍝 PASTAS",   on_click=set_c_rank, args=('PAS',), use_container_width=True, type="primary" if c_rank_pas else "secondary")
@@ -1138,10 +1192,10 @@ def view_chedraui(df_c):
 
         dff_rank = df_c.copy()
         if sel_st_rank != "Todos": dff_rank = dff_rank[dff_rank["ESTADO"]==sel_st_rank]
-        list_gen=["Vinagre Oli Nutrioli Balsámico 250 ml (3795515)","Aceite Sabrosano Mixto 850 ML (3691244)","Aceite Mi Sazón Vegetal 800 ML (3775895)","Pps Nutrioli Fusilli Integral (3878678)","Aceite Ave Soya-Canola 850 ML (3696190)","Pps Nutrioli Spaguetti 200 (3878673)","Pps Nutrioli Fusilli Verduras (3878676)","Pps Nutrioli Fideo 200 Gr (3878671)","Aceite Nutrioli Antigoteo 700 ML (3738492)","Pps Nutrioli Spaguetti Integra (3878677)","Pps Nutrioli Codo Verduras 200 (3878675)","Pps Nutrioli Codo 200 Gr (3878674)","Aceite Nutrioli Protect Defensas 850 ml (3828176)","Pps Nutrioli Fusilli 450 (3878672)","Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli Bote 750 Ml (3570620)","Ace Oliva EV Oli BOT 500 Ml (3368446)","Aceite Gran Tradición Soya-Canola 800 ML (3009894)","Aceite Nutrioli Protect Mente 850 Ml (3009960)","Aceite De Soya Nutrioli Bot 850 Ml (3132396)","Ace Oliva Puro Oli BOT 500 Ml (3570614)","Ace Oliva EV Oli BOT 250 Ml (3284690)","Aceite De Soya Nutrioli Bot 400 Ml (3590824)","Aceite Mi Sazón Mixto 400 ML","Aceite Aerosol Nutrioli Soya Lata 180 Gr (3317342)","Aceite Oli Extra Virgen 500 Ml (3646332)","Aceite Aerosol Ave Mixto 170 Gr (3693814)","Aceite de Oliva Oli Nutrioli 250 Ml (3679970)","Aceite Nutrioli Soya 850 ML (3676715)","Aceite Sabrosano Rinde + 850 ML (3782858)","Aceite Aerosol Oli Oliva 145 Ml (3679971)","Ace Oliva EV Oli BOT 500 Ml (3428657)","Aceite Nutrioli 850+Pps Fusill (3880416)","Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
-        list_pas=["Pps Nutrioli Fusilli Integral (3878678)","Pps Nutrioli Spaguetti 200 (3878673)","Pps Nutrioli Fusilli Verduras (3878676)","Pps Nutrioli Fideo 200 Gr (3878671)","Pps Nutrioli Spaguetti Integra (3878677)","Pps Nutrioli Codo Verduras 200 (3878675)","Pps Nutrioli Codo 200 Gr (3878674)","Pps Nutrioli Fusilli 450 (3878672)","Aceite Nutrioli 850+Pps Fusill (3880416)","Aceite Nutrioli 850+Pps Codo 2 (3880415)"]
-        list_oli=["Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli Bote 750 Ml (3570620)","Ace Oliva EV Oli BOT 500 Ml (3368446)","Ace Oliva Puro Oli BOT 500 Ml (3570614)","Ace Oliva EV Oli BOT 250 Ml (3284690)","Aceite Oli Extra Virgen 500 Ml (3646332)","Aceite de Oliva Oli Nutrioli 250 Ml (3679970)","Aceite Aerosol Oli Oliva 145 Ml (3679971)","Ace Oliva EV Oli BOT 500 Ml (3428657)"]
-        list_nut=["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
+        list_gen=_CHE_RANK_GEN
+        list_pas=_CHE_RANK_PAS
+        list_oli=_CHE_RANK_OLI
+        list_nut=_CHE_RANK_NUT
         target_list=[]; rank_title=""
         if   c_rank_gen: target_list=list_gen; rank_title="VENTA GENERAL ($)"
         elif c_rank_pas: target_list=list_pas; rank_title="VENTA PASTAS ($)"
