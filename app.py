@@ -228,13 +228,14 @@ c_rank_pas = st.session_state.get('c_rank_pas', False)
 c_rank_oli = st.session_state.get('c_rank_oli', False)
 c_rank_nut = st.session_state.get('c_rank_nut', False)
 
-# --- 6. FUNCIÓN INYECTORA DE ESTILOS JS ---
+# --- 6. FUNCIÓN INYECTORA DE ESTILOS JS EXACTA ---
 def inject_button_styles():
     _dias_active = s_dias_inv or w_dias_inv or c_dias_inv
     _prod_active = s_dias_prod or w_dias_prod
     _neg_active  = w_neg or c_neg_zero
 
-    _neg_shadow = "rgba(230,81,0,0.85)" if act == "WALMART" else "rgba(183,28,28,0.85)"
+    # Resolviendo los colores de Negativos por retailer
+    _neg_shadow = "rgba(211,47,47,0.85)" if act == "WALMART" else "rgba(183,28,28,0.85)"
     _neg_border = "#FFAB40" if act == "WALMART" else "#EF9A9A"
 
     _gen_active = s_rank_gen or w_rank_tiendas or c_rank_gen
@@ -242,25 +243,25 @@ def inject_button_styles():
     _oli_active = s_rank_oli or w_rank_olivas  or c_rank_oli
     _nut_active = s_rank_nut or w_nutri_top10  or c_rank_nut
 
-    # Estructura: (Label, BG_Color, Text_Color, Is_Active, Border_Active, Shadow_Active, Grayscale, Border_Inactive)
+    # Matriz maestra de colores: (Label, BG_Color, Text_Color, Is_Active, Border_Active, Shadow_Active, Grayscale, Border_Inactive)
     STYLES = [
-        # Navegación principal
+        # Nav Superior
         ("SORIANA",  "linear-gradient(135deg,#D32F2F,#B71C1C)", "#ffffff", act=="SORIANA",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         ("WALMART",  "linear-gradient(135deg,#0071DC,#005BB5)", "#ffffff", act=="WALMART",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         ("CHEDRAUI", "linear-gradient(135deg,#FF6600,#E65100)", "#ffffff", act=="CHEDRAUI", "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         
-        # Acciones exclusivas (Colores exactos del prompt)
+        # Botones de Acción Específicos
         ("🔴 INV SIN VENTA", "#D32F2F", "#ffffff", s_rojo, "#ffffff", "rgba(211,47,47,0.85)", False, "#ef9a9a"),
-        ("🔴 SIN VTA 4SEM",  "#D32F2F", "#ffffff", w_4w,   "#ffffff", "rgba(0,113,220,0.85)", False, "#90CAF9"),
+        ("🔴 SIN VTA 4SEM",  "#D32F2F", "#ffffff", w_4w,   "#ffffff", "rgba(211,47,47,0.85)", False, "#90CAF9"),
         
-        # Acciones compartidas (Colores exactos del prompt)
+        # Botones de Acción Compartidos
         ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",  False, "#80CBC4"),
-        ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(74,20,140,0.85)", False, "#CE93D8"),
+        ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(0,105,92,0.85)",  False, "#CE93D8"),
         ("📉 NEGATIVOS",   "#D32F2F", "#ffffff", _neg_active,  "#ffffff", _neg_shadow,            False, _neg_border),
         
-        # Ranking (Colores institucionales actualizados)
+        # Botones de Ranking
         ("📊 GENERAL",  "#FFFFFF","#5AB027", _gen_active, "#D4D4D4","rgba(46,125,50,0.70)", False, "#D4D4D4"),
-        ("🍝 PASTAS",   "#DBBB35","#075E12", _pas_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
+        ("🍝 PASTAS",   "#DBBB35","#FFFFFF", _pas_active, "#D4D4D4","rgba(240,228,2,0.70)", True,  "transparent"),
         ("🫒 OLIVAS",   "#4E5C02","#FFFFFF", _oli_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
         ("🍃 NUTRIOLI", "#2E7D32","#FFD700", _nut_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
         ("🏆 NUTRIOLI", "#2E7D32","#FFD700", _nut_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
@@ -270,7 +271,6 @@ def inject_button_styles():
     for (label, bg, fg, active, border_act, shadow_act, gs, border_inact) in STYLES:
         gs_val = "grayscale(100%)" if gs else "none"
         esc    = label.replace("\\","\\\\").replace("'","\\'")
-        
         border_inact_str = "none" if border_inact == "transparent" else f"1px solid {border_inact}"
 
         if active:
@@ -385,9 +385,9 @@ st.markdown(f"<div style='text-align:right;font-size:0.7rem;color:{status_color}
 
 # --- 9. NAVEGACIÓN ---
 col1, col2, col3 = st.columns(3, gap="small")
-with col1: st.button("SORIANA",  on_click=set_retailer, args=("SORIANA",),  use_container_width=True, key="nav_sor")
-with col2: st.button("WALMART",  on_click=set_retailer, args=("WALMART",),  use_container_width=True, key="nav_wal")
-with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True, key="nav_che")
+with col1: st.button("SORIANA",  on_click=set_retailer, args=("SORIANA",),  use_container_width=True)
+with col2: st.button("WALMART",  on_click=set_retailer, args=("WALMART",),  use_container_width=True)
+with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True)
 st.markdown("<hr style='margin:15px 0;border:0;border-top:1px solid #eee;'>", unsafe_allow_html=True)
 
 # --- 10. VISTAS ---
@@ -426,9 +426,9 @@ def view_soriana(df_s):
             [fil_res if "Todos" not in fil_res else None, fil_nda, fil_nom, fil_cd, fil_edo, fil_fmt, fil_art])
 
         b1, b2, b3 = st.columns(3, gap="small")
-        with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo,      key="sor_btn_rojo",      use_container_width=True, type="primary" if s_rojo      else "secondary")
-        with b2: st.button("📅 DIAS INV",      on_click=tog_s_dias_inv,  key="sor_btn_dias_inv",  use_container_width=True, type="primary" if s_dias_inv  else "secondary")
-        with b3: st.button("📋 DIAS X PROD",   on_click=tog_s_dias_prod, key="sor_btn_dias_prod", use_container_width=True, type="primary" if s_dias_prod else "secondary")
+        with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo,      use_container_width=True, type="primary" if s_rojo      else "secondary")
+        with b2: st.button("📅 DIAS INV",      on_click=tog_s_dias_inv,  use_container_width=True, type="primary" if s_dias_inv  else "secondary")
+        with b3: st.button("📋 DIAS X PROD",   on_click=tog_s_dias_prod, use_container_width=True, type="primary" if s_dias_prod else "secondary")
 
         if st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
@@ -494,6 +494,7 @@ def view_soriana(df_s):
             disp.columns=['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM',ascending=False)
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Soriana_General.xlsx", use_container_width=True)
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -501,10 +502,10 @@ def view_soriana(df_s):
         with sm1: sel_s_rank_st  = st.multiselect("Estado (Ranking)",  sorted(df_s["ESTADO"].unique()),  key="s_rnk_st")
         with sm2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].unique()), key="s_rnk_fmt")
         sr1,sr2,sr3,sr4 = st.columns(4,gap="small")
-        with sr1: st.button("📊 GENERAL",  key="s_rk_gen", on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if s_rank_gen else "secondary")
-        with sr2: st.button("🍝 PASTAS",   key="s_rk_pas", on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if s_rank_pas else "secondary")
-        with sr3: st.button("🫒 OLIVAS",   key="s_rk_oli", on_click=set_s_rank, args=('OLI',), use_container_width=True, type="primary" if s_rank_oli else "secondary")
-        with sr4: st.button("🍃 NUTRIOLI", key="s_rk_nut", on_click=set_s_rank, args=('NUT',), use_container_width=True, type="primary" if s_rank_nut else "secondary")
+        with sr1: st.button("📊 GENERAL",  on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if s_rank_gen else "secondary")
+        with sr2: st.button("🍝 PASTAS",   on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if s_rank_pas else "secondary")
+        with sr3: st.button("🫒 OLIVAS",   on_click=set_s_rank, args=('OLI',), use_container_width=True, type="primary" if s_rank_oli else "secondary")
+        with sr4: st.button("🍃 NUTRIOLI", on_click=set_s_rank, args=('NUT',), use_container_width=True, type="primary" if s_rank_nut else "secondary")
 
         dff_s_rank = apply_filters(df_s,["ESTADO","FORMATO"],[sel_s_rank_st,sel_s_rank_fmt])
         list_s_gen = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE COMESTIBLE GRAN TRADICION 900 ML","ACEITE COMESTIBLE SABROSANO +30 850 ML","ACEITE OLIVA OLI PURO SPRAY 145 ML","JUSTO 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI DHA 850 ML","ACEITE COMESTIBLE SABROSANO 850 ML","SABROSANO RINDE+ 850 ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE DE SOYA NUTRIOLI BOT 850 ML","VINAGRE BALSAMICO 250ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
@@ -522,6 +523,7 @@ def view_soriana(df_s):
                 final_s_rank = dff_sub.groupby(["NO_TIENDA","TIENDA"])['SO_$'].sum().reset_index()
                 final_s_rank.columns=['No Tienda','TIENDA',rank_title_s]
                 st.dataframe(final_s_rank.sort_values(by=rank_title_s,ascending=False).style.format({rank_title_s:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_s_rank))
+                st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_s_rank), file_name="Soriana_Ranking.xlsx", use_container_width=True)
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
 
@@ -560,20 +562,19 @@ def view_walmart(df_w):
         dff     = apply_filters(dff_kpi,["DESCRIPCION"],[sel_prod])
 
         b1,b2,b3,b4 = st.columns(4,gap="small")
-        with b1: st.button("📉 NEGATIVOS",    on_click=tog_w, args=('w_neg',),       key="btn_w_neg",       use_container_width=True, type="primary" if w_neg      else "secondary")
-        with b2: st.button("🔴 SIN VTA 4SEM", on_click=tog_w, args=('w_4w',),        key="btn_w_4w",        use_container_width=True, type="primary" if w_4w       else "secondary")
-        with b3: st.button("📅 DIAS INV",     on_click=tog_w, args=('w_dias_inv',),  key="btn_w_dias",      use_container_width=True, type="primary" if w_dias_inv  else "secondary")
-        with b4: st.button("📋 DIAS X PROD",  on_click=tog_w, args=('w_dias_prod',), key="btn_w_dias_prod", use_container_width=True, type="primary" if w_dias_prod else "secondary")
+        with b1: st.button("📉 NEGATIVOS",    on_click=tog_w, args=('w_neg',),       use_container_width=True, type="primary" if w_neg      else "secondary")
+        with b2: st.button("🔴 SIN VTA 4SEM", on_click=tog_w, args=('w_4w',),        use_container_width=True, type="primary" if w_4w       else "secondary")
+        with b3: st.button("📅 DIAS INV",     on_click=tog_w, args=('w_dias_inv',),  use_container_width=True, type="primary" if w_dias_inv  else "secondary")
+        with b4: st.button("📋 DIAS X PROD",  on_click=tog_w, args=('w_dias_prod',), use_container_width=True, type="primary" if w_dias_prod else "secondary")
 
         if st.session_state.w_neg: dff=dff[dff["EXISTENCIA"]<0]; st.warning("VISTA: NEGATIVOS")
         if st.session_state.w_4w:  dff=dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
 
-        borges_list = ["BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES ACEITE OLIVA EXTRA SUAVE","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE SOJA JENGIBRE","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA AL  ROMERO FRESCO","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES VINAGRE BALSAMICO 250ML","VINAGRE DE JEREZ 250 ML","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO FRAMBUESA","VINAGRE DE VINO AL  AJO 250 ML","BORGES VINAGRE VINO BLANCO","VINAGRE DE MANZANA ECOLOGICO","BORGES VINAGRE DE VINOTINTO","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","BORGES ACEITE OLIVA 100 PURO CON AJO"]
-        borges_pat = "|".join([x.replace(" ","").upper() for x in borges_list])
+        borges_set = {x.replace(" ","").upper() for x in ["BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES ACEITE OLIVA EXTRA SUAVE","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE SOJA JENGIBRE","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA AL  ROMERO FRESCO","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES VINAGRE BALSAMICO 250ML","VINAGRE DE JEREZ 250 ML","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO FRAMBUESA","VINAGRE DE VINO AL  AJO 250 ML","BORGES VINAGRE VINO BLANCO","VINAGRE DE MANZANA ECOLOGICO","BORGES VINAGRE DE VINOTINTO","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","BORGES ACEITE OLIVA 100 PURO CON AJO"]}
         desc_w = dff["DESCRIPCION"].str.upper().str.replace(" ","",regex=False).str.replace("&NBSP;","",regex=False)
         
         conditions_w = [
-            desc_w.str.contains(borges_pat, regex=True, na=False),
+            desc_w.str.contains("|".join([x.replace(" ","").upper() for x in ["BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES ACEITE OLIVA EXTRA SUAVE","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE SOJA JENGIBRE","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA AL  ROMERO FRESCO","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES VINAGRE BALSAMICO 250ML","VINAGRE DE JEREZ 250 ML","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO FRAMBUESA","VINAGRE DE VINO AL  AJO 250 ML","BORGES VINAGRE VINO BLANCO","VINAGRE DE MANZANA ECOLOGICO","BORGES VINAGRE DE VINOTINTO","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","BORGES ACEITE OLIVA 100 PURO CON AJO"]]), regex=True, na=False),
             desc_w.str.contains("NUTRIOLI",na=False)&desc_w.str.contains("946",na=False),
             desc_w.str.contains("SABROSANO",na=False),
             desc_w.str.contains("GRANTRADICION",na=False),
@@ -601,6 +602,7 @@ def view_walmart(df_w):
                     res_rows.append({"CODIGO":"-","ARTICULO":item,"DIAS DE INV":0,"SELL OUT":0})
             df_ps = pd.DataFrame(res_rows)
             st.dataframe(df_ps.style.format({'DIAS DE INV':"{:,.1f}",'SELL OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(df_ps))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(df_ps), file_name="Walmart_Dias_Producto.xlsx", use_container_width=True)
 
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -613,9 +615,10 @@ def view_walmart(df_w):
             m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
             m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
             m4.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
-            disp_w = dff[["TIENDA","CODIGO","DESCRIPCION","DIAS_INV"]].copy()
-            disp_w.columns=["TIENDA","CODIGO","DESCRIPCION","DIAS INVENTARIO"]
-            st.dataframe(disp_w.style.format({'DIAS INVENTARIO':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_w))
+            disp_w_dias = dff[["TIENDA","CODIGO","DESCRIPCION","DIAS_INV"]].copy()
+            disp_w_dias.columns = ["TIENDA","CODIGO","DESCRIPCION","DIAS INVENTARIO"]
+            st.dataframe(disp_w_dias.style.format({'DIAS INVENTARIO':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_w_dias))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_w_dias), file_name="Walmart_Reporte_Dias.xlsx", use_container_width=True)
 
         else:
             c_kpi,c_chart = st.columns([1,2])
@@ -636,6 +639,7 @@ def view_walmart(df_w):
             disp=dff[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_General.xlsx", use_container_width=True)
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -643,10 +647,10 @@ def view_walmart(df_w):
         with cm1: sel_st_rank  = st.multiselect("Estado (Ranking)",  sorted(df_w["ESTADO"].unique()),  key="rnk_st")
         with cm2: sel_fmt_rank = st.multiselect("Formato (Ranking)", sorted(df_w["FORMATO"].unique()), key="rnk_fmt")
         sr1,sr2,sr3,sr4 = st.columns(4,gap="small")
-        with sr1: st.button("📊 GENERAL",  key="w_rk_gen", on_click=set_rank, args=('tiendas',),  use_container_width=True, type="primary" if w_rank_tiendas else "secondary")
-        with sr2: st.button("🍝 PASTAS",   key="w_rk_pas", on_click=set_rank, args=('pastas',),   use_container_width=True, type="primary" if w_rank_pastas  else "secondary")
-        with sr3: st.button("🫒 OLIVAS",   key="w_rk_oli", on_click=set_rank, args=('olivas',),   use_container_width=True, type="primary" if w_rank_olivas  else "secondary")
-        with sr4: st.button("🏆 NUTRIOLI", key="w_rk_nut", on_click=set_rank, args=('nutrioli',), use_container_width=True, type="primary" if w_nutri_top10  else "secondary")
+        with sr1: st.button("📊 GENERAL",  on_click=set_rank, args=('tiendas',),  use_container_width=True, type="primary" if w_rank_tiendas else "secondary")
+        with sr2: st.button("🍝 PASTAS",   on_click=set_rank, args=('pastas',),   use_container_width=True, type="primary" if w_rank_pastas  else "secondary")
+        with sr3: st.button("🫒 OLIVAS",   on_click=set_rank, args=('olivas',),   use_container_width=True, type="primary" if w_rank_olivas  else "secondary")
+        with sr4: st.button("🏆 NUTRIOLI", on_click=set_rank, args=('nutrioli',), use_container_width=True, type="primary" if w_nutri_top10  else "secondary")
 
         dff_rank = apply_filters(df_w,["ESTADO","FORMATO"],[sel_st_rank,sel_fmt_rank])
         final_rank = None
@@ -669,7 +673,7 @@ def view_walmart(df_w):
             fmt_dict = {c:"${:,.2f}" for c in final_rank.columns if "($)" in c or "$" in c}
             if "INVENTARIO" in final_rank.columns: fmt_dict["INVENTARIO"]="{:,.0f}"
             st.dataframe(final_rank.style.format(fmt_dict), use_container_width=True, hide_index=True, height=auto_height(final_rank))
-
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
 def view_chedraui(df_c):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
@@ -698,8 +702,8 @@ def view_chedraui(df_c):
         dff      = apply_filters(dff_base,["ARTICULO"],[fil_art])
 
         b1,b2 = st.columns(2,gap="small")
-        with b1: st.button("📉 NEGATIVOS", on_click=tog_c, args=('c_neg_zero',), key="c_btn_nz",   use_container_width=True, type="primary" if c_neg_zero else "secondary")
-        with b2: st.button("📅 DIAS INV",  on_click=tog_c, args=('c_dias_inv',), key="c_btn_dias", use_container_width=True, type="primary" if c_dias_inv else "secondary")
+        with b1: st.button("📉 NEGATIVOS", on_click=tog_c, args=('c_neg_zero',), use_container_width=True, type="primary" if c_neg_zero else "secondary")
+        with b2: st.button("📅 DIAS INV",  on_click=tog_c, args=('c_dias_inv',), use_container_width=True, type="primary" if c_dias_inv else "secondary")
 
         if st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -713,6 +717,7 @@ def view_chedraui(df_c):
             disp=dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
             disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_Dias_Inventario.xlsx", use_container_width=True)
 
         elif st.session_state.c_neg_zero:
             dff_neg = dff[dff["INV_ULT_SEM"]<0].copy()
@@ -720,6 +725,7 @@ def view_chedraui(df_c):
             disp_neg = dff_neg[["ESTADO","COORDINADOR","EJECUTIVO","PROMOTOR","CATEGORIA","NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM"]].copy()
             disp_neg.columns=["ESTADO","Coordinador","Ejecutivo","Promotor","Categoria","No de tienda","Tienda","articulo","Inventario 06 Mar 2026"]
             st.dataframe(disp_neg.style.format({'Inventario 06 Mar 2026':"{:,.0f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Chedraui_Negativos.xlsx", use_container_width=True)
 
         else:
             desc_c = dff["ARTICULO"].str.upper().str.replace(" ","",regex=False)
@@ -757,15 +763,16 @@ def view_chedraui(df_c):
             disp=dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
             disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_General.xlsx", use_container_width=True)
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         sel_st_rank = st.selectbox("Filtrar Estado (Ranking)", ["Todos"]+sorted(df_c["ESTADO"].unique()), key="c_rnk_st")
         cr1,cr2,cr3,cr4 = st.columns(4,gap="small")
-        with cr1: st.button("📊 GENERAL",  key="c_rk_gen", on_click=set_c_rank, args=('GEN',), use_container_width=True, type="primary" if c_rank_gen else "secondary")
-        with cr2: st.button("🍝 PASTAS",   key="c_rk_pas", on_click=set_c_rank, args=('PAS',), use_container_width=True, type="primary" if c_rank_pas else "secondary")
-        with cr3: st.button("🫒 OLIVAS",   key="c_rk_oli", on_click=set_c_rank, args=('OLI',), use_container_width=True, type="primary" if c_rank_oli else "secondary")
-        with cr4: st.button("🍃 NUTRIOLI", key="c_rk_nut", on_click=set_c_rank, args=('NUT',), use_container_width=True, type="primary" if c_rank_nut else "secondary")
+        with cr1: st.button("📊 GENERAL",  on_click=set_c_rank, args=('GEN',), use_container_width=True, type="primary" if c_rank_gen else "secondary")
+        with cr2: st.button("🍝 PASTAS",   on_click=set_c_rank, args=('PAS',), use_container_width=True, type="primary" if c_rank_pas else "secondary")
+        with cr3: st.button("🫒 OLIVAS",   on_click=set_c_rank, args=('OLI',), use_container_width=True, type="primary" if c_rank_oli else "secondary")
+        with cr4: st.button("🍃 NUTRIOLI", on_click=set_c_rank, args=('NUT',), use_container_width=True, type="primary" if c_rank_nut else "secondary")
 
         dff_rank = df_c.copy()
         if sel_st_rank != "Todos": dff_rank = dff_rank[dff_rank["ESTADO"]==sel_st_rank]
@@ -784,6 +791,7 @@ def view_chedraui(df_c):
                 final_c_rank = dff_sub.groupby(["NO_TIENDA","TIENDA"])['SELL_OUT'].sum().reset_index()
                 final_c_rank.columns=['No Tienda','TIENDA',rank_title]
                 st.dataframe(final_c_rank.sort_values(by=rank_title,ascending=False).style.format({rank_title:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
+                st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_c_rank), file_name="Chedraui_Ranking.xlsx", use_container_width=True)
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
 # --- 11. EJECUTAR VISTA ACTIVA ---
@@ -801,7 +809,7 @@ inject_button_styles()
 
 # --- 12. PIE DE PÁGINA ---
 st.divider()
-if st.button("🗑️ LIMPIAR MEMORIA / RESET", use_container_width=True, type="secondary", key="reset_btn"):
+if st.button("🗑️ LIMPIAR MEMORIA / RESET", use_container_width=True, type="secondary"):
     if not st.session_state.confirm_reset:
         st.session_state.confirm_reset = True
         st.error("⚠️ ¡CONFIRMACIÓN REQUERIDA! Haz clic de nuevo para resetear todo.")
