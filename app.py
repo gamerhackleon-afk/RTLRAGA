@@ -108,7 +108,7 @@ def set_retailer(retailer_name):
     logic_vars = [
         's_rojo','s_dias_inv','s_dias_prod','s_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut',
         'w_neg','w_4w','w_dias_inv','w_dias_prod','w_rank_tiendas','w_rank_pastas','w_rank_olivas','w_nutri_top10',
-        'c_alt','c_neg','c_dias_inv','c_neg_zero','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut'
+        'c_alt','c_neg','c_dias_inv','c_neg_zero','c_under_10','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut'
     ]
     for var in logic_vars:
         if var in st.session_state:
@@ -147,7 +147,7 @@ def load_sor(path):
             df.columns[7]:  "FORMATO",
             df.columns[8]:  "SEM1",
             df.columns[9]:  "SEM2",
-            df.columns[10]:  "SEM3",
+            df.columns[10]: "SEM3",
             df.columns[11]: "SO_$",
             df.columns[12]: "INV_CAJAS",
             df.columns[13]: "DIAS_INV",
@@ -178,20 +178,20 @@ def load_wal(path):
 
         col_map = {
             df.columns[0]:  "CODIGO",
-            df.columns[1]:  "DESCRIPCION",     # Col 4
+            df.columns[1]:  "DESCRIPCION",
             df.columns[2]:  "CATEGORIA",
             df.columns[3]:  "ESTADO",
-            df.columns[4]:  "TIENDA",          # Col 15
-            df.columns[5]:  "FORMATO",         # Col 16
+            df.columns[4]:  "TIENDA",
+            df.columns[5]:  "FORMATO",
             df.columns[6]:  "MARCA",
             df.columns[7]:  "DIAS_INV",
-            df.columns[8]:  "EXISTENCIA",      # Col 42
+            df.columns[8]:  "EXISTENCIA",
             df.columns[9]:  "VTA_S1",
             df.columns[10]: "VTA_S2",
             df.columns[11]: "VTA_S3",
             df.columns[12]: "VTA_S4",
-            df.columns[13]: "SO_SEM_ANT",      # Col 95
-            df.columns[14]: "SO_$",            # Col 96
+            df.columns[13]: "SO_SEM_ANT",
+            df.columns[14]: "SO_$",
         }
         df.rename(columns=col_map, inplace=True)
 
@@ -216,19 +216,19 @@ def load_che(path):
         df = pd.read_excel(source, engine='openpyxl', usecols=needed_cols)
 
         col_map = {
-            df.columns[0]: "ESTADO",          # Col D (3)
-            df.columns[1]: "COORDINADOR",     # Col E (4)
-            df.columns[2]: "EJECUTIVO",       # Col F (5)
-            df.columns[3]: "PROMOTOR",        # Col G (6)
-            df.columns[4]: "COL_FILTRO",      # Col H (7)
-            df.columns[5]: "CATEGORIA",       # Col I (8)
-            df.columns[6]: "NO_TIENDA",       # Col J (9)
-            df.columns[7]: "TIENDA",          # Col K (10)
-            df.columns[8]: "ARTICULO",        # Col M (12)
-            df.columns[9]: "INV_ULT_SEM",     # Col N (13)
-            df.columns[10]: "VTA_PROM_DIARIA",# Col R (17)
-            df.columns[11]: "DIAS_INV",       # Col S (18)
-            df.columns[12]: "SELL_OUT",       # Col T (19)
+            df.columns[0]: "ESTADO",
+            df.columns[1]: "COORDINADOR",
+            df.columns[2]: "EJECUTIVO",
+            df.columns[3]: "PROMOTOR",
+            df.columns[4]: "COL_FILTRO",
+            df.columns[5]: "CATEGORIA",
+            df.columns[6]: "NO_TIENDA",
+            df.columns[7]: "TIENDA",
+            df.columns[8]: "ARTICULO",
+            df.columns[9]: "INV_ULT_SEM",
+            df.columns[10]: "VTA_PROM_DIARIA",
+            df.columns[11]: "DIAS_INV",
+            df.columns[12]: "SELL_OUT",
         }
         df.rename(columns=col_map, inplace=True)
 
@@ -263,13 +263,44 @@ html, body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; }}
 .kpi-title {{ font-size: 0.8rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }}
 .kpi-value {{ font-size: 2rem; font-weight: 800; margin-top: 5px; word-break: break-word; }}
 .retailer-header {{ font-size: 1.2rem; font-weight: 800; color: white; padding: 10px 15px; border-radius: 8px; margin: 15px 0; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-shadow: 0 1px 2px rgba(0,0,0,0.2); }}
+
+/* BOTONES PRINCIPALES DE NAVEGACIÓN */
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) button {{ border-radius: 10px !important; font-weight: 800 !important; text-transform: uppercase; transition: all 0.2s ease-in-out !important; border: none !important; }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(1) button {{ background: linear-gradient(135deg, #D32F2F, #B71C1C) !important; color: white !important; {css_styles['SORIANA']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(2) button {{ background: linear-gradient(135deg, #0071DC, #005BB5) !important; color: white !important; {css_styles['WALMART']} }}
 div[data-testid="stHorizontalBlock"]:nth-of-type(1) [data-testid="stColumn"]:nth-of-type(3) button {{ background: linear-gradient(135deg, #FF6600, #E65100) !important; color: white !important; {css_styles['CHEDRAUI']} }}
+
+/* ANIMACIÓN PARA SUB-BOTONES INACTIVOS (DEFAULT) */
 div.stButton > button[kind="secondary"] {{ background-color: #ffffff !important; color: #555555 !important; border: 1px solid #dcdcdc !important; font-weight: 600 !important; border-radius: 8px !important; transition: all 0.2s ease-in-out !important; }}
 div.stButton > button[kind="secondary"]:hover {{ border: 1px solid {active_color} !important; color: {active_color} !important; box-shadow: 0 2px 4px rgba(0,0,0,0.05) !important; }}
+
+/* ANIMACIÓN PARA SUB-BOTONES ACTIVOS (GLOBALES) */
 div.stButton > button[kind="primary"] {{ background-color: {active_color} !important; color: #ffffff !important; border: 2px solid {active_color} !important; font-weight: 800 !important; border-radius: 8px !important; box-shadow: 0 4px 12px rgba(0,0,0,0.25) !important; transform: scale(1.03) !important; transition: all 0.2s ease-in-out !important; }}
+
+/* ---------------------------------------------------- */
+/* ESTILOS DE LAYOUT PERSONALIZADO PARA BOTONES RANKING */
+/* ---------------------------------------------------- */
+
+/* GENERAL: Letras negras, fondo blanco */
+div.element-container:has(.marker-gen) + div.element-container button {{ background-color: #FFFFFF !important; color: #000000 !important; border: 2px solid #000000 !important; font-weight: 800 !important; border-radius: 8px !important; transition: 0.2s !important; }}
+div.element-container:has(.marker-gen) + div.element-container button[kind="primary"] {{ box-shadow: 0 4px 14px rgba(0,0,0,0.2) !important; opacity: 1 !important; transform: scale(1.04) !important; }}
+div.element-container:has(.marker-gen) + div.element-container button[kind="secondary"] {{ opacity: 0.6 !important; transform: scale(0.98) !important; border: 1px solid #CCC !important; }}
+
+/* PASTAS: Letras blancas, fondo amarillo espagueti */
+div.element-container:has(.marker-pas) + div.element-container button {{ background-color: #F4B41A !important; color: #FFFFFF !important; border: 2px solid #F4B41A !important; font-weight: 800 !important; border-radius: 8px !important; transition: 0.2s !important; }}
+div.element-container:has(.marker-pas) + div.element-container button[kind="primary"] {{ border: 2px solid #FFFFFF !important; box-shadow: 0 4px 14px rgba(244,180,26,0.6) !important; opacity: 1 !important; transform: scale(1.04) !important; }}
+div.element-container:has(.marker-pas) + div.element-container button[kind="secondary"] {{ opacity: 0.6 !important; transform: scale(0.98) !important; filter: grayscale(20%); }}
+
+/* OLIVAS: Letras negras, fondo verde oliva */
+div.element-container:has(.marker-oli) + div.element-container button {{ background-color: #8A9A5B !important; color: #000000 !important; border: 2px solid #8A9A5B !important; font-weight: 800 !important; border-radius: 8px !important; transition: 0.2s !important; }}
+div.element-container:has(.marker-oli) + div.element-container button[kind="primary"] {{ border: 2px solid #000000 !important; box-shadow: 0 4px 14px rgba(138,154,91,0.6) !important; opacity: 1 !important; transform: scale(1.04) !important; }}
+div.element-container:has(.marker-oli) + div.element-container button[kind="secondary"] {{ opacity: 0.6 !important; transform: scale(0.98) !important; filter: grayscale(20%); }}
+
+/* NUTRIOLI: Letras amarillas, fondo verde corporativo */
+div.element-container:has(.marker-nut) + div.element-container button {{ background-color: #2E7D32 !important; color: #FFD700 !important; border: 2px solid #2E7D32 !important; font-weight: 800 !important; border-radius: 8px !important; transition: 0.2s !important; }}
+div.element-container:has(.marker-nut) + div.element-container button[kind="primary"] {{ border: 2px solid #FFD700 !important; box-shadow: 0 4px 14px rgba(46,125,50,0.6) !important; opacity: 1 !important; transform: scale(1.04) !important; }}
+div.element-container:has(.marker-nut) + div.element-container button[kind="secondary"] {{ opacity: 0.6 !important; transform: scale(0.98) !important; filter: grayscale(20%); }}
+
 @media (max-width: 768px) {{
     .block-container {{ padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
     div[data-testid="stHorizontalBlock"] button {{ height: 50px !important; font-size: 0.8rem !important; padding: 0 !important; }}
@@ -320,7 +351,7 @@ def view_soriana(df_s):
         if v not in st.session_state: st.session_state[v] = False
 
     def tog_s_rojo():
-        st.session_state.s_rojo    = not st.session_state.s_rojo
+        st.session_state.s_rojo      = not st.session_state.s_rojo
         st.session_state.s_dias_inv  = False
         st.session_state.s_dias_prod = False
     def tog_s_dias_inv():
@@ -359,9 +390,9 @@ def view_soriana(df_s):
         )
 
         b1, b2, b3 = st.columns(3, gap="small")
-        with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo,     use_container_width=True, type="primary" if st.session_state.s_rojo      else "secondary")
-        with b2: st.button("📅 DIAS INV",      on_click=tog_s_dias_inv, use_container_width=True, type="primary" if st.session_state.s_dias_inv  else "secondary")
-        with b3: st.button("📋 DIAS X PROD",    on_click=tog_s_dias_prod,use_container_width=True, type="primary" if st.session_state.s_dias_prod else "secondary")
+        with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo,     key="sor_btn_rojo",      use_container_width=True, type="primary" if st.session_state.s_rojo      else "secondary")
+        with b2: st.button("📅 DIAS INV",      on_click=tog_s_dias_inv, key="sor_btn_dias_inv",  use_container_width=True, type="primary" if st.session_state.s_dias_inv  else "secondary")
+        with b3: st.button("📋 DIAS X PROD",    on_click=tog_s_dias_prod,key="sor_btn_dias_prod", use_container_width=True, type="primary" if st.session_state.s_dias_prod else "secondary")
 
         if st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
@@ -465,10 +496,18 @@ def view_soriana(df_s):
         with s_mod2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", sorted(df_s["FORMATO"].unique()), key="s_rnk_fmt")
 
         sr1, sr2, sr3, sr4 = st.columns(4, gap="small")
-        with sr1: st.button("📊 GENERAL",  key="s_rk_gen", on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if st.session_state.s_rank_gen else "secondary")
-        with sr2: st.button("🍝 PASTAS",   key="s_rk_pas", on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if st.session_state.s_rank_pas else "secondary")
-        with sr3: st.button("🫒 OLIVAS",   key="s_rk_oli", on_click=set_s_rank, args=('OLI',), use_container_width=True, type="primary" if st.session_state.s_rank_oli else "secondary")
-        with sr4: st.button("🍃 NUTRIOLI", key="s_rk_nut", on_click=set_s_rank, args=('NUT',), use_container_width=True, type="primary" if st.session_state.s_rank_nut else "secondary")
+        with sr1:
+            st.markdown('<span class="marker-gen"></span>', unsafe_allow_html=True)
+            st.button("📊 GENERAL",  key="s_rk_gen", on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if st.session_state.s_rank_gen else "secondary")
+        with sr2:
+            st.markdown('<span class="marker-pas"></span>', unsafe_allow_html=True)
+            st.button("🍝 PASTAS",   key="s_rk_pas", on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if st.session_state.s_rank_pas else "secondary")
+        with sr3:
+            st.markdown('<span class="marker-oli"></span>', unsafe_allow_html=True)
+            st.button("🫒 OLIVAS",   key="s_rk_oli", on_click=set_s_rank, args=('OLI',), use_container_width=True, type="primary" if st.session_state.s_rank_oli else "secondary")
+        with sr4:
+            st.markdown('<span class="marker-nut"></span>', unsafe_allow_html=True)
+            st.button("🍃 NUTRIOLI", key="s_rk_nut", on_click=set_s_rank, args=('NUT',), use_container_width=True, type="primary" if st.session_state.s_rank_nut else "secondary")
 
         dff_s_rank = apply_filters(df_s, ["ESTADO","FORMATO"], [sel_s_rank_st, sel_s_rank_fmt])
 
@@ -540,7 +579,7 @@ def view_walmart(df_w):
         with b1: st.button("📉 NEGATIVOS",   on_click=tog_w, args=('w_neg',),       key="btn_w_neg",       use_container_width=True, type="primary" if st.session_state.w_neg      else "secondary")
         with b2: st.button("🔴 SIN VTA 4SEM",on_click=tog_w, args=('w_4w',),        key="btn_w_4w",        use_container_width=True, type="primary" if st.session_state.w_4w       else "secondary")
         with b3: st.button("📅 DIAS INV",    on_click=tog_w, args=('w_dias_inv',),  key="btn_w_dias",      use_container_width=True, type="primary" if st.session_state.w_dias_inv  else "secondary")
-        with b4: st.button("📋 DIAS X PROD", on_click=tog_w, args=('w_dias_prod',), key="btn_w_dias_prod",use_container_width=True, type="primary" if st.session_state.w_dias_prod else "secondary")
+        with b4: st.button("📋 DIAS X PROD", on_click=tog_w, args=('w_dias_prod',), key="btn_w_dias_prod", use_container_width=True, type="primary" if st.session_state.w_dias_prod else "secondary")
 
         if st.session_state.w_neg: dff = dff[dff["EXISTENCIA"] < 0]; st.warning("VISTA: NEGATIVOS")
         if st.session_state.w_4w:  dff = dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
@@ -657,10 +696,18 @@ def view_walmart(df_w):
         with c_mod2: sel_fmt_rank = st.multiselect("Formato (Ranking)", sorted(df_w["FORMATO"].unique()), key="rnk_fmt")
 
         r1,r2,r3,r4 = st.columns(4, gap="small")
-        with r1: st.button("📊 GENERAL",  key="rk_gen", on_click=set_rank, args=('tiendas',),  use_container_width=True, type="primary" if st.session_state.w_rank_tiendas else "secondary")
-        with r2: st.button("🍝 PASTAS",   key="rk_pas", on_click=set_rank, args=('pastas',),   use_container_width=True, type="primary" if st.session_state.w_rank_pastas  else "secondary")
-        with r3: st.button("🫒 OLIVAS",   key="rk_oli", on_click=set_rank, args=('olivas',),   use_container_width=True, type="primary" if st.session_state.w_rank_olivas  else "secondary")
-        with r4: st.button("🏆 NUTRIOLI", key="rk_nut", on_click=set_rank, args=('nutrioli',), use_container_width=True, type="primary" if st.session_state.w_nutri_top10  else "secondary")
+        with r1:
+            st.markdown('<span class="marker-gen"></span>', unsafe_allow_html=True)
+            st.button("📊 GENERAL",  key="w_rk_gen", on_click=set_rank, args=('tiendas',),  use_container_width=True, type="primary" if st.session_state.w_rank_tiendas else "secondary")
+        with r2:
+            st.markdown('<span class="marker-pas"></span>', unsafe_allow_html=True)
+            st.button("🍝 PASTAS",   key="w_rk_pas", on_click=set_rank, args=('pastas',),   use_container_width=True, type="primary" if st.session_state.w_rank_pastas  else "secondary")
+        with r3:
+            st.markdown('<span class="marker-oli"></span>', unsafe_allow_html=True)
+            st.button("🫒 OLIVAS",   key="w_rk_oli", on_click=set_rank, args=('olivas',),   use_container_width=True, type="primary" if st.session_state.w_rank_olivas  else "secondary")
+        with r4:
+            st.markdown('<span class="marker-nut"></span>', unsafe_allow_html=True)
+            st.button("🏆 NUTRIOLI", key="w_rk_nut", on_click=set_rank, args=('nutrioli',), use_container_width=True, type="primary" if st.session_state.w_nutri_top10  else "secondary")
 
         dff_rank = apply_filters(df_w, ["ESTADO","FORMATO"], [sel_st_rank, sel_fmt_rank])
         final_rank = None
@@ -724,8 +771,8 @@ def view_chedraui(df_c):
         dff      = apply_filters(dff_base, ["ARTICULO"], [fil_art])
 
         b1, b2 = st.columns(2, gap="small")
-        with b1: st.button("📉 NEGATIVOS",  on_click=tog_c, args=('c_neg_zero',), key="btn_che_nz",   use_container_width=True, type="primary" if st.session_state.c_neg_zero else "secondary")
-        with b2: st.button("📅 DIAS INV",        on_click=tog_c, args=('c_dias_inv',), key="btn_che_dias", use_container_width=True, type="primary" if st.session_state.c_dias_inv  else "secondary")
+        with b1: st.button("📉 NEGATIVOS",  on_click=tog_c, args=('c_neg_zero',), key="c_btn_nz",   use_container_width=True, type="primary" if st.session_state.c_neg_zero else "secondary")
+        with b2: st.button("📅 DIAS INV",   on_click=tog_c, args=('c_dias_inv',), key="c_btn_dias", use_container_width=True, type="primary" if st.session_state.c_dias_inv  else "secondary")
 
         if st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -790,8 +837,7 @@ def view_chedraui(df_c):
                     st.info("Sin datos para gráfica.")
 
             view_mode = ""
-            if st.session_state.c_neg_zero: dff = dff[dff["DIAS_INV"] <= 0]; view_mode = "Negativos o Cero"
-            st.caption(f"📋 Vista: {view_mode or 'Completa'}")
+            st.caption(f"📋 Vista: Completa")
             
             disp = dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
             disp.columns = ['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
@@ -802,10 +848,18 @@ def view_chedraui(df_c):
         sel_st_rank = st.selectbox("Filtrar Estado (Ranking)", ["Todos"] + sorted(df_c["ESTADO"].unique()), key="c_rnk_st")
 
         cr1,cr2,cr3,cr4 = st.columns(4, gap="small")
-        with cr1: st.button("📊 GENERAL",  key="c_rk_gen", on_click=set_c_rank, args=('GEN',), use_container_width=True, type="primary" if st.session_state.c_rank_gen else "secondary")
-        with cr2: st.button("🍝 PASTAS",   key="c_rk_pas", on_click=set_c_rank, args=('PAS',), use_container_width=True, type="primary" if st.session_state.c_rank_pas else "secondary")
-        with cr3: st.button("🫒 OLIVAS",   key="c_rk_oli", on_click=set_c_rank, args=('OLI',), use_container_width=True, type="primary" if st.session_state.c_rank_oli else "secondary")
-        with cr4: st.button("🍃 NUTRIOLI", key="c_rk_nut", on_click=set_c_rank, args=('NUT',), use_container_width=True, type="primary" if st.session_state.c_rank_nut else "secondary")
+        with cr1:
+            st.markdown('<span class="marker-gen"></span>', unsafe_allow_html=True)
+            st.button("📊 GENERAL",  key="c_rk_gen", on_click=set_c_rank, args=('GEN',), use_container_width=True, type="primary" if st.session_state.c_rank_gen else "secondary")
+        with cr2:
+            st.markdown('<span class="marker-pas"></span>', unsafe_allow_html=True)
+            st.button("🍝 PASTAS",   key="c_rk_pas", on_click=set_c_rank, args=('PAS',), use_container_width=True, type="primary" if st.session_state.c_rank_pas else "secondary")
+        with cr3:
+            st.markdown('<span class="marker-oli"></span>', unsafe_allow_html=True)
+            st.button("🫒 OLIVAS",   key="c_rk_oli", on_click=set_c_rank, args=('OLI',), use_container_width=True, type="primary" if st.session_state.c_rank_oli else "secondary")
+        with cr4:
+            st.markdown('<span class="marker-nut"></span>', unsafe_allow_html=True)
+            st.button("🍃 NUTRIOLI", key="c_rk_nut", on_click=set_c_rank, args=('NUT',), use_container_width=True, type="primary" if st.session_state.c_rank_nut else "secondary")
 
         dff_rank = df_c.copy()
         if sel_st_rank != "Todos":
