@@ -66,6 +66,18 @@ if 'df_chedraui' not in st.session_state:
 if 'load_errors' not in st.session_state:
     st.session_state.load_errors = {}
 
+# --- INICIALIZACIÓN DE VARS DE VISTA (una sola vez, no en cada render) ---
+_view_vars = [
+    's_rojo','s_dias_inv','s_dias_prod','s_transito',
+    's_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut',
+    'w_neg','w_4w','w_dias_inv','w_dias_prod',
+    'w_rank_tiendas','w_rank_pastas','w_rank_olivas','w_nutri_top10',
+    'c_neg_zero','c_dias_inv','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut',
+]
+for _v in _view_vars:
+    if _v not in st.session_state:
+        st.session_state[_v] = False
+
 # --- 3. FUNCIONES UTILITARIAS ---
 def safe_mean(series):
     return series.mean() if not series.empty else 0
@@ -95,56 +107,114 @@ def convert_df_to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Reporte')
     return output.getvalue()
 
-def download_file_fast(url):
+@st.cache_data(show_spinner=False, ttl=14400)
+def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
     """
-    Descarga optimizada con:
-    - ETag cache (evita re-descargar si no cambió el archivo)
-    - seek(0) garantizado antes de retornar (Fix 2)
-    - Retry x2 con pausa corta ante fallos de red (Fix 3)
-    - Re-verificación de conectividad si falla (Fix 7)
+    Cachea la figura Plotly por combinación de datos+colores.
+    pie_df_json es el DataFrame serializado como JSON para que sea hashable.
+    Evita reconstruir el gráfico en cada re-render del script.
+    """
+    import json
+    pie_df = pd.read_json(pie_df_json)
+    fig = px.pie(
+        pie_df, values=val_col, names='Category',
+        color='Category', color_discrete_map=dict(zip(domain, range_)), hole=0.45
+    )
+    fig.update_traces(
+        textposition='outside', textinfo='label+percent+value',
+        texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',
+        hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>'
+    )
+    fig.update_layout(
+        showlegend=False, margin=dict(t=50, b=50, l=100, r=100),
+        height=450, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        uniformtext_minsize=9, uniformtext_mode='hide'
+    )
+    return fig
+
+# --- SESSION HTTP GLOBAL (variable de módulo — segura para threads, no session_state) ---
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+def _build_session() -> requests.Session:
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=0.4,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET", "HEAD"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(
+        max_retries=retry,
+        pool_connections=6,
+        pool_maxsize=6,
+    )
+    session.mount("https://", adapter)
+    session.mount("http://",  adapter)
+    session.headers.update({
+        "User-Agent":      "Mozilla/5.0",
+        "Accept-Encoding": "gzip, deflate",
+        "Connection":      "keep-alive",
+    })
+    return session
+
+# Variable de módulo: existe una vez por proceso Python, accesible desde cualquier thread
+_HTTP_SESSION = _build_session()
+
+def download_file_fast(url: str):
+    """
+    Descarga optimizada:
+    - Session Keep-Alive: reutiliza TCP, elimina handshake TLS repetido
+    - ETag: devuelve caché si el archivo no cambió en GitHub
+    - Streaming chunked 256 KB: empieza a procesar mientras llega
+    - Timeout (connect=5s, read=30s): falla rápido si no hay red
+    - Retry automático vía HTTPAdapter
     """
     etag_key  = f'etag_{url}'
     cache_key = f'cached_file_{url}'
 
-    # — Intento con ETag (304 = sin cambios, devuelve caché) —
-    headers = {
-        'User-Agent': 'Mozilla/5.0',
-        'If-None-Match': st.session_state.get(etag_key, ''),
-        'Accept-Encoding': 'gzip, deflate',
-    }
+    headers = {"If-None-Match": st.session_state.get(etag_key, "")}
 
-    for attempt in range(3):           # Fix 3: hasta 3 intentos
-        try:
-            response = requests.get(url, headers=headers, timeout=25)
-            if response.status_code == 304:
-                cached = st.session_state.get(cache_key)
-                if cached is not None:
-                    cached.seek(0)     # Fix 2
-                    return cached
-            response.raise_for_status()
-            content = response.content
-            st.session_state[etag_key] = response.headers.get('ETag', '')
-            result = BytesIO(content)
-            result.seek(0)             # Fix 2: puntero al inicio antes de guardar
-            # Guardar copia fresca en caché de sesión
-            fresh = BytesIO(content)
-            fresh.seek(0)
-            st.session_state[cache_key] = fresh
-            return result
-        except requests.exceptions.Timeout:
-            if attempt == 1:
-                # Fix 7: re-verificar conectividad real tras timeout
-                st.session_state.is_online = _check_online()
-            if attempt < 2:
-                time.sleep(0.8 * (attempt + 1))   # backoff suave: 0.8s, 1.6s
-        except Exception:
-            if attempt < 2:
-                time.sleep(0.5)
-    return None
+    try:
+        response = _HTTP_SESSION.get(url, headers=headers, timeout=(5, 30), stream=True)
+
+        if response.status_code == 304:
+            cached = st.session_state.get(cache_key)
+            if cached is not None:
+                cached.seek(0)
+                return cached
+            # Caché local ausente — forzar re-descarga sin ETag
+            st.session_state.pop(etag_key, None)
+            response = _HTTP_SESSION.get(url, timeout=(5, 30), stream=True)
+
+        response.raise_for_status()
+
+        buf = BytesIO()
+        for chunk in response.iter_content(chunk_size=256 * 1024):
+            if chunk:
+                buf.write(chunk)
+
+        st.session_state[etag_key] = response.headers.get("ETag", "")
+
+        raw = buf.getvalue()
+        cached_copy = BytesIO(raw)
+        cached_copy.seek(0)
+        st.session_state[cache_key] = cached_copy
+
+        buf.seek(0)
+        return buf
+
+    except requests.exceptions.Timeout:
+        st.session_state.is_online = _check_online()
+        return None
+    except Exception:
+        return None
 
 def download_file(url_or_file):
     if isinstance(url_or_file, str):
         return download_file_fast(url_or_file)
+    url_or_file.seek(0)   # garantizar seek(0) también en uploads manuales
     return url_or_file
 
 def set_retailer(retailer_name):
@@ -272,26 +342,62 @@ def load_che(path):
         return None
 
 # --- 5. CARGA PARALELA DE LAS 3 BASES ---
-def _load_one(key):
-    """Carga un retailer: descarga + parseo. Retorna (key, df, error)."""
+def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
+    """
+    Fase 1: solo descarga bytes — sin parsear.
+    Corre en thread propio para solapar las 3 descargas de red simultáneamente.
+    """
+    try:
+        buf = download_file_fast(URLS_DB[key])
+        if buf is None:
+            return key, None, "No se pudo descargar el archivo."
+        return key, buf, None
+    except Exception as e:
+        return key, None, str(e)
+
+def _parse_raw(key: str, buf: BytesIO):
+    """
+    Fase 2: parseo CPU — sin red.
+    Se puede solapar con otras descargas activas.
+    """
+    loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
+    try:
+        df = loaders[key](URLS_DB[key])   # load_* ya gestiona el buf internamente vía download_file
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            return key, None, "Archivo vacío o sin columnas válidas."
+        return key, df, None
+    except Exception as e:
+        return key, None, str(e)
+
+def _load_one(key: str) -> tuple[str, object, str | None]:
+    """Descarga + parseo completo para un retailer."""
     loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
     try:
         df = loaders[key](URLS_DB[key])
-        if df is None:
-            return key, None, "No se pudo descargar o parsear el archivo."
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            return key, None, "Archivo vacío o sin columnas válidas."
         return key, df, None
     except Exception as e:
         return key, None, str(e)
 
 def load_all_parallel():
     """
-    Descarga y parsea las 3 bases en paralelo.
-    Muestra una pantalla de carga con barra de progreso y porcentaje.
+    Pipeline de 2 fases para máxima velocidad:
+
+    FASE 1 — Descarga paralela (I/O puro, 3 threads):
+      Las 3 descargas de red corren simultáneamente.
+      El tiempo total = el archivo más lento (no la suma de los 3).
+
+    FASE 2 — Parseo paralelo (CPU, 3 threads):
+      Los 3 pd.read_excel corren simultáneamente sobre los bytes ya en memoria.
+      GIL no es problema aquí porque read_excel libera el GIL en I/O de BytesIO.
+
+    Session HTTP con Keep-Alive: la conexión TCP a GitHub CDN se reutiliza
+    entre las descargas, eliminando el handshake TLS repetido.
     """
-    keys = list(URLS_DB.keys())
-    completed = {k: False for k in keys}
-    results   = {}
-    errors    = {}
+    keys    = list(URLS_DB.keys())
+    results = {}
+    errors  = {}
 
     # ── Pantalla de carga ──────────────────────────────────────────────
     st.markdown("""
@@ -324,14 +430,14 @@ def load_all_parallel():
     progress_bar = st.progress(0)
     status_text  = st.empty()
 
-    def render_screen(pct, msg, done_set):
+    def render_screen(pct, msg, done_set, phase=""):
         sor_cls = "done" if "SORIANA"  in done_set else ""
         wal_cls = "done" if "WALMART"  in done_set else ""
         che_cls = "done" if "CHEDRAUI" in done_set else ""
         placeholder.markdown(f"""
         <div class="loader-wrap">
             <div class="loader-title">⚙️ Sincronizando bases de datos</div>
-            <div class="loader-sub">Descargando las 3 fuentes en paralelo — por favor espera…</div>
+            <div class="loader-sub">{phase}</div>
             <div class="retailer-badges">
                 <span class="badge badge-sor {sor_cls}">{'✅' if sor_cls else '⏳'} SORIANA</span>
                 <span class="badge badge-wal {wal_cls}">{'✅' if wal_cls else '⏳'} WALMART</span>
@@ -345,38 +451,57 @@ def load_all_parallel():
             unsafe_allow_html=True
         )
 
-    render_screen(0.0, "Iniciando descarga…", set())
+    # ── FASE 1: descarga paralela (0% → 50%) ──────────────────────────
+    render_screen(0.0, "Conectando a GitHub CDN…", set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
+    raw_buffers = {}
+    done_dl = set()
+    n = len(keys)
 
-    done_set = set()
+    with ThreadPoolExecutor(max_workers=min(3, n)) as executor:
+        future_map = {executor.submit(_download_raw, k): k for k in keys}
+        for future in as_completed(future_map):
+            key, buf, err = future.result()
+            if buf is not None:
+                raw_buffers[key] = buf
+            else:
+                errors[key] = err or "Error de descarga"
+                results[key] = None
+            done_dl.add(key)
+            pct = 0.0 + (len(done_dl) / n) * 0.50   # 0% → 50%
+            msg = f"⬇️ {key} descargado" if buf else f"⚠️ Error descargando {key}"
+            render_screen(pct, msg, done_dl if buf else set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
 
-    with ThreadPoolExecutor(max_workers=min(3, len(keys))) as executor:  # Fix 2: safe max_workers
-        future_map = {executor.submit(_load_one, k): k for k in keys}
-        n = len(keys)
+    # ── FASE 2: parseo paralelo (50% → 100%) ──────────────────────────
+    render_screen(0.50, "Procesando archivos Excel…", set(), "⚙️ Fase 2/2 — Procesando Excel en paralelo")
+    done_parse = set()
+    keys_to_parse = [k for k in keys if k in raw_buffers]
+
+    with ThreadPoolExecutor(max_workers=min(3, len(keys_to_parse) or 1)) as executor:
+        future_map = {executor.submit(_parse_raw, k, raw_buffers[k]): k for k in keys_to_parse}
         for future in as_completed(future_map):
             key, df, err = future.result()
-            # Fix 4: solo guardar si df es un DataFrame válido con filas
             if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
                 results[key] = df
             else:
                 results[key] = None
-                if not err:
-                    err = "Archivo vacío o sin columnas válidas."
-            if err:
-                errors[key] = err
-            done_set.add(key)
-            pct = len(done_set) / n
-            msg = f"✅ {key} listo" if not err else f"⚠️ Error en {key}"
-            render_screen(pct, msg, done_set)
+                if not errors.get(key):
+                    errors[key] = err or "Parseo fallido"
+            done_parse.add(key)
+            pct = 0.50 + (len(done_parse) / n) * 0.50   # 50% → 100%
+            msg = f"✅ {key} listo" if results.get(key) is not None else f"⚠️ Error en {key}"
+            all_done = done_dl | {k for k in done_parse}
+            render_screen(pct, msg, {k for k in done_parse if results.get(k) is not None},
+                          "⚙️ Fase 2/2 — Procesando Excel en paralelo")
 
-    # ── Finalizar pantalla ─────────────────────────────────────────────
+    # ── Finalizar ──────────────────────────────────────────────────────
+    ok_count = sum(1 for v in results.values() if v is not None)
     progress_bar.progress(1.0)
     status_text.markdown(
-        "<p style='text-align:center;color:#28a745;font-weight:700;font-size:1rem;'>✅ ¡Carga completa! — 100%</p>",
+        f"<p style='text-align:center;color:#28a745;font-weight:700;font-size:1rem;'>"
+        f"✅ ¡Carga completa! {ok_count}/{n} bases cargadas — 100%</p>",
         unsafe_allow_html=True
     )
-    time.sleep(0.6)
-
-    # Limpiar placeholders
+    time.sleep(0.5)
     placeholder.empty()
     progress_bar.empty()
     status_text.empty()
@@ -621,8 +746,6 @@ def get_cached_or_upload(key, uploader_key, load_func):
 # --- 13. VISTAS ---
 def view_soriana(df_s):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
-    for v in ['s_rojo','s_dias_inv','s_dias_prod','s_transito','s_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut']:
-        if v not in st.session_state: st.session_state[v] = False
 
     def tog_s_rojo():
         st.session_state.s_rojo      = not st.session_state.s_rojo
@@ -735,9 +858,7 @@ def view_soriana(df_s):
                 if not pie_df.empty:
                     domain = ["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
                     range_ = ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
-                    fig = px.pie(pie_df,values='SO_$',names='Category',color='Category',color_discrete_map=dict(zip(domain,range_)),hole=0.45)
-                    fig.update_traces(textposition='outside',textinfo='label+percent+value',texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>')
-                    fig.update_layout(showlegend=False,margin=dict(t=50,b=50,l=100,r=100),height=450,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",uniformtext_minsize=9,uniformtext_mode='hide')
+                    fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
             if st.session_state.s_rojo: dff=dff[dff['SIN_VTA']]; st.caption("📋 Vista: Sin Venta")
@@ -780,8 +901,6 @@ def view_soriana(df_s):
 
 def view_walmart(df_w):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
-    for v in ['w_neg','w_4w','w_dias_inv','w_dias_prod','w_rank_tiendas','w_rank_pastas','w_rank_olivas','w_nutri_top10']:
-        if v not in st.session_state: st.session_state[v]=False
 
     def tog_w(target):
         for v in ['w_neg','w_4w','w_dias_inv','w_dias_prod']:
@@ -882,9 +1001,7 @@ def view_walmart(df_w):
                 if not pie_df.empty:
                     domain=["SABROSANO","GT","OLIVAS","BALSAMICO","PASTAS","REST NUTRIOLI","NUTRIOLI","BORGES"]
                     range_=["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#FF0000"]
-                    fig=px.pie(pie_df,values='SO_$',names='Category',color='Category',color_discrete_map=dict(zip(domain,range_)),hole=0.45)
-                    fig.update_traces(textposition='outside',textinfo='label+percent+value',texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>')
-                    fig.update_layout(showlegend=False,margin=dict(t=50,b=50,l=100,r=100),height=450,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",uniformtext_minsize=9,uniformtext_mode='hide')
+                    fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
             disp=dff[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
@@ -929,8 +1046,6 @@ def view_walmart(df_w):
 
 def view_chedraui(df_c):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
-    for v in ['c_neg_zero','c_dias_inv','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut']:
-        if v not in st.session_state: st.session_state[v]=False
 
     def tog_c(target):
         for v in ['c_neg_zero','c_dias_inv']:
@@ -1003,9 +1118,7 @@ def view_chedraui(df_c):
                 if not pie_df.empty:
                     domain=["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
                     range_=["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
-                    fig=px.pie(pie_df,values='SELL_OUT',names='Category',color='Category',color_discrete_map=dict(zip(domain,range_)),hole=0.45)
-                    fig.update_traces(textposition='outside',textinfo='label+percent+value',texttemplate='<b>%{label}</b><br>%{percent:.0%} | $%{value:,.0f}',hovertemplate='<b>%{label}</b><br>Sell Out: $%{value:,.2f}<br>Porcentaje: %{percent:.0%}<extra></extra>')
-                    fig.update_layout(showlegend=False,margin=dict(t=50,b=50,l=100,r=100),height=450,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",uniformtext_minsize=9,uniformtext_mode='hide')
+                    fig = _make_pie(pie_df.to_json(), domain, range_, 'SELL_OUT')
                     st.plotly_chart(fig, use_container_width=True)
                 else: st.info("Sin datos para gráfica.")
             st.caption("📋 Vista: Completa")
@@ -1045,17 +1158,20 @@ def view_chedraui(df_c):
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
 # --- 14. EJECUTAR VISTA ACTIVA ---
-if st.session_state.active_retailer == 'SORIANA':
-    df_s = get_cached_or_upload("SORIANA", "up_s", load_sor)
-    if df_s is not None: view_soriana(df_s)
-elif st.session_state.active_retailer == 'WALMART':
-    df_w = get_cached_or_upload("WALMART", "up_w", load_wal)
-    if df_w is not None: view_walmart(df_w)
-elif st.session_state.active_retailer == 'CHEDRAUI':
-    df_c = get_cached_or_upload("CHEDRAUI", "up_c", load_che)
-    if df_c is not None: view_chedraui(df_c)
-
+# inject_button_styles ANTES de las vistas: el JS ya está listo cuando el DOM se construye
 inject_button_styles()
+
+_act = st.session_state.active_retailer
+with st.container(key=f"view_{_act}"):
+    if _act == 'SORIANA':
+        df_s = get_cached_or_upload("SORIANA", "up_s", load_sor)
+        if df_s is not None: view_soriana(df_s)
+    elif _act == 'WALMART':
+        df_w = get_cached_or_upload("WALMART", "up_w", load_wal)
+        if df_w is not None: view_walmart(df_w)
+    elif _act == 'CHEDRAUI':
+        df_c = get_cached_or_upload("CHEDRAUI", "up_c", load_che)
+        if df_c is not None: view_chedraui(df_c)
 
 # --- 15. PIE DE PÁGINA ---
 st.divider()
