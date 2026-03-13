@@ -308,44 +308,79 @@ def load_wal(path):
     except Exception:
         return None
 
+def find_col(df, candidates):
+    for name in candidates:
+        for col in df.columns:
+            if str(col).strip().upper() == name.upper():
+                return col
+    for name in candidates:
+        for col in df.columns:
+            if name.upper() in str(col).strip().upper():
+                return col
+    return None
+
+def validate_columns(df, retailer, required_cols_dict):
+    faltantes = []
+    mapeo = {}
+    for col_interna, candidatos in required_cols_dict.items():
+        encontrada = find_col(df, candidatos)
+        if encontrada:
+            mapeo[encontrada] = col_interna
+        else:
+            faltantes.append(f"{col_interna} (ej. {candidatos[0]})")
+    
+    if faltantes:
+        st.error(f"⚠️ **Error en la base de {retailer}:** El Excel cambió su estructura. No se encontraron las siguientes columnas:\n" + "\n".join(f"- {c}" for c in faltantes))
+        return None
+    
+    df = df.rename(columns=mapeo)
+    return df[list(required_cols_dict.keys())]
+
 @st.cache_data(**CACHE_CONFIG)
 def load_che(path):
     try:
         source = download_file(path)
         if source is None: return None
-        needed_cols = [3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 17, 18, 19]
-        try:
-            df = pd.read_excel(source, engine='calamine', usecols=needed_cols)
-        except Exception:
-            source.seek(0)
-            df = pd.read_excel(source, engine='openpyxl', usecols=needed_cols)
-        # Fix 1: validar columnas antes de indexar
-        if len(df.columns) < 13:
-            return None
-        col_map = {df.columns[0]:"ESTADO",df.columns[1]:"COORDINADOR",df.columns[2]:"EJECUTIVO",
-                   df.columns[3]:"PROMOTOR",df.columns[4]:"COL_FILTRO",df.columns[5]:"CATEGORIA",
-                   df.columns[6]:"NO_TIENDA",df.columns[7]:"TIENDA",df.columns[8]:"ARTICULO",
-                   df.columns[9]:"INV_ULT_SEM",df.columns[10]:"VTA_PROM_DIARIA",
-                   df.columns[11]:"DIAS_INV",df.columns[12]:"SELL_OUT"}
-        df.rename(columns=col_map, inplace=True)
+        
+        df = pd.read_excel(source, engine='openpyxl')
+        
+        CHEDRAUI_COLS = {
+            "ESTADO": ["ESTADO", "Estado"],
+            "COORDINADOR": ["COORDINADOR VTAS", "COORDINADOR"],
+            "EJECUTIVO": ["EJECUTIVO", "Ejecutivo"],
+            "PROMOTOR": ["PROMOTOR", "Promotor"],
+            "COL_FILTRO": ["ESTATUS", "Estatus"],
+            "CATEGORIA": ["CATEGORÍA", "CATEGORIA"],
+            "NO_TIENDA": ["# TDA", "NO TIENDA", "NO_TIENDA"],
+            "TIENDA": ["TIENDA", "Tienda"],
+            "ARTICULO": ["DESCRIPCION", "DESCRIPCIÓN", "ARTICULO", "Sku"],
+            "INV_ULT_SEM": ["INVENTARIO"], 
+            "VTA_PROM_DIARIA": ["VENTA PROM DIARIO", "VTA PROM"],
+            "DIAS_INV": ["DIAS DE INVENTARIO", "DIAS INV"],
+            "SELL_OUT": ["VENTA $", "SELL OUT", "VENTA"]
+        }
+        
+        df = validate_columns(df, "CHEDRAUI", CHEDRAUI_COLS)
+        if df is None: return None 
+        
         col_h = pd.to_numeric(df["COL_FILTRO"], errors='coerce')
         df = df[col_h != 0]
         df = df.dropna(subset=["ARTICULO"])
         df = df[pd.to_numeric(df["NO_TIENDA"], errors='coerce').notna()]
+        
         for col in ["INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
         df = _str_cols(df, ["ESTADO", "COORDINADOR", "EJECUTIVO", "PROMOTOR", "CATEGORIA", "NO_TIENDA", "TIENDA", "ARTICULO"])
-        # Fix 5+6: artículo normalizado precalculado
         df["DESC_NORM"] = df["ARTICULO"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
-    except Exception:
+    except Exception as e:
+        st.error(f"Error procesando Chedraui: {e}")
         return None
 
 
 # ══════════════════════════════════════════════════════════════════════
-# LISTAS DE PRODUCTOS — constantes de módulo, se definen UNA SOLA VEZ
-# No se recalculan en cada render (evita crear listas de 30+ strings
-# en cada click del usuario)
+# LISTAS DE PRODUCTOS — constantes de módulo
 # ══════════════════════════════════════════════════════════════════════
 _SOR_DIAS_PROD = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE SABROSANO 850 ML","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE OLIVA OLI PURO SPRAY 145 ML","ACEITE OLIVA OLI EV SPRAY 145 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR","VINAGRE BALSAMICO 250ML"]
 _SOR_RANK_GEN  = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE COMESTIBLE GRAN TRADICION 900 ML","ACEITE COMESTIBLE SABROSANO +30 850 ML","ACEITE OLIVA OLI PURO SPRAY 145 ML","JUSTO 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI DHA 850 ML","ACEITE COMESTIBLE SABROSANO 850 ML","SABROSANO RINDE+ 850 ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE DE SOYA NUTRIOLI BOT 850 ML","VINAGRE BALSAMICO 250ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
@@ -360,7 +395,6 @@ _CHE_RANK_PAS  = ["Pps Nutrioli Fusilli Integral (3878678)","Pps Nutrioli Spague
 _CHE_RANK_OLI  = ["Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli Bote 750 Ml (3570620)","Ace Oliva EV Oli BOT 500 Ml (3368446)","Ace Oliva Puro Oli BOT 500 Ml (3570614)","Ace Oliva EV Oli BOT 250 Ml (3284690)","Aceite Oli Extra Virgen 500 Ml (3646332)","Aceite de Oliva Oli Nutrioli 250 Ml (3679970)","Aceite Aerosol Oli Oliva 145 Ml (3679971)","Ace Oliva EV Oli BOT 500 Ml (3428657)"]
 _CHE_RANK_NUT  = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
 
-# Sets precalculados para isin() — O(1) lookup en lugar de O(n) en lista
 _SOR_RANK_GEN_SET  = frozenset(s.strip() for s in _SOR_RANK_GEN)
 _SOR_RANK_PAS_SET  = frozenset(s.strip() for s in _SOR_RANK_PAS)
 _SOR_RANK_OLI_SET  = frozenset(s.strip() for s in _SOR_RANK_OLI)
@@ -369,16 +403,12 @@ _CHE_RANK_GEN_SET  = frozenset(s.strip() for s in _CHE_RANK_GEN)
 _CHE_RANK_PAS_SET  = frozenset(s.strip() for s in _CHE_RANK_PAS)
 _CHE_RANK_OLI_SET  = frozenset(s.strip() for s in _CHE_RANK_OLI)
 _CHE_RANK_NUT_SET  = frozenset(s.strip() for s in _CHE_RANK_NUT)
-# Patrones normalizados para dias_prod (pre-strip una vez)
+
 _SOR_DIAS_PROD_NORM = [s.upper().replace("&NBSP;","").replace(" ","") for s in _SOR_DIAS_PROD]
 _WAL_DIAS_PROD_NORM = [s.upper().replace("&NBSP;","").replace(" ","") for s in _WAL_DIAS_PROD]
 
 # --- 5. CARGA PARALELA DE LAS 3 BASES ---
 def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
-    """
-    Fase 1: solo descarga bytes — sin parsear.
-    Corre en thread propio para solapar las 3 descargas de red simultáneamente.
-    """
     try:
         buf = download_file_fast(URLS_DB[key])
         if buf is None:
@@ -388,10 +418,6 @@ def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
         return key, None, str(e)
 
 def _parse_raw(key: str, buf: BytesIO):
-    """
-    Fase 2: parseo CPU sobre el buf ya descargado — sin tocar la red.
-    Recibe el BytesIO directamente para evitar doble descarga.
-    """
     NEEDED = {"SORIANA": 17, "WALMART": 15, "CHEDRAUI": 13}
     try:
         buf.seek(0)
@@ -402,7 +428,6 @@ def _parse_raw(key: str, buf: BytesIO):
             df = pd.read_excel(buf, engine='openpyxl')
         if len(df.columns) < NEEDED[key]:
             return key, None, f"Columnas insuficientes ({len(df.columns)} < {NEEDED[key]})"
-        # Reusar el loader completo pasando el buf como archivo local
         buf.seek(0)
         loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
         df = loaders[key](buf)
@@ -413,7 +438,6 @@ def _parse_raw(key: str, buf: BytesIO):
         return key, None, str(e)
 
 def _load_one(key: str) -> tuple[str, object, str | None]:
-    """Descarga + parseo completo para un retailer."""
     loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
     try:
         df = loaders[key](URLS_DB[key])
@@ -424,25 +448,10 @@ def _load_one(key: str) -> tuple[str, object, str | None]:
         return key, None, str(e)
 
 def load_all_parallel():
-    """
-    Pipeline de 2 fases para máxima velocidad:
-
-    FASE 1 — Descarga paralela (I/O puro, 3 threads):
-      Las 3 descargas de red corren simultáneamente.
-      El tiempo total = el archivo más lento (no la suma de los 3).
-
-    FASE 2 — Parseo paralelo (CPU, 3 threads):
-      Los 3 pd.read_excel corren simultáneamente sobre los bytes ya en memoria.
-      GIL no es problema aquí porque read_excel libera el GIL en I/O de BytesIO.
-
-    Session HTTP con Keep-Alive: la conexión TCP a GitHub CDN se reutiliza
-    entre las descargas, eliminando el handshake TLS repetido.
-    """
     keys    = list(URLS_DB.keys())
     results = {}
     errors  = {}
 
-    # ── Pantalla de carga ──────────────────────────────────────────────
     st.markdown("""
     <style>
     .loader-wrap {
@@ -494,7 +503,6 @@ def load_all_parallel():
             unsafe_allow_html=True
         )
 
-    # ── FASE 1: descarga paralela (0% → 50%) ──────────────────────────
     render_screen(0.0, "Conectando a GitHub CDN…", set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
     raw_buffers = {}
     done_dl = set()
@@ -510,11 +518,10 @@ def load_all_parallel():
                 errors[key] = err or "Error de descarga"
                 results[key] = None
             done_dl.add(key)
-            pct = 0.0 + (len(done_dl) / n) * 0.50   # 0% → 50%
+            pct = 0.0 + (len(done_dl) / n) * 0.50
             msg = f"⬇️ {key} descargado" if buf else f"⚠️ Error descargando {key}"
             render_screen(pct, msg, done_dl if buf else set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
 
-    # ── FASE 2: parseo paralelo (50% → 100%) ──────────────────────────
     render_screen(0.50, "Procesando archivos Excel…", set(), "⚙️ Fase 2/2 — Procesando Excel en paralelo")
     done_parse = set()
     keys_to_parse = [k for k in keys if k in raw_buffers]
@@ -530,13 +537,11 @@ def load_all_parallel():
                 if not errors.get(key):
                     errors[key] = err or "Parseo fallido"
             done_parse.add(key)
-            pct = 0.50 + (len(done_parse) / n) * 0.50   # 50% → 100%
+            pct = 0.50 + (len(done_parse) / n) * 0.50
             msg = f"✅ {key} listo" if results.get(key) is not None else f"⚠️ Error en {key}"
-            all_done = done_dl | {k for k in done_parse}
             render_screen(pct, msg, {k for k in done_parse if results.get(k) is not None},
                           "⚙️ Fase 2/2 — Procesando Excel en paralelo")
 
-    # ── Finalizar ──────────────────────────────────────────────────────
     ok_count = sum(1 for v in results.values() if v is not None)
     progress_bar.progress(1.0)
     status_text.markdown(
@@ -581,43 +586,41 @@ c_rank_pas = st.session_state.get('c_rank_pas', False)
 c_rank_oli = st.session_state.get('c_rank_oli', False)
 c_rank_nut = st.session_state.get('c_rank_nut', False)
 
-# --- 7. FUNCIÓN INYECTORA DE ESTILOS JS ---
+# --- 7. FUNCIÓN INYECTORA DE ESTILOS JS EXACTA ---
 def inject_button_styles():
     _dias_active = s_dias_inv or w_dias_inv or c_dias_inv
     _prod_active = s_dias_prod or w_dias_prod
     _neg_active  = w_neg or c_neg_zero
 
-    _dias_bg = "#00695C"
-    _dias_shadow = "rgba(0,105,92,0.85)"
-    _dias_border_inact = "#80CBC4"
-
-    _prod_bg = "#1D362B"
-    _prod_shadow = "rgba(74,20,140,0.85)"
-    _prod_border_inact = "#CE93D8"
-
-    _neg_bg = "#D32F2F"
-    if act == "WALMART":
-        _neg_shadow = "rgba(230,81,0,0.85)"
-        _neg_border_inact = "#FFAB40"
-    else:
-        _neg_shadow = "rgba(183,28,28,0.85)"
-        _neg_border_inact = "#EF9A9A"
+    # Resolviendo sombras condicionales de botones compartidos
+    _dias_shadow = "rgba(211,47,47,0.85)" if act == "SORIANA" else "rgba(0,105,92,0.85)"
+    
+    _neg_shadow = "rgba(211,47,47,0.85)" if act == "WALMART" else "rgba(183,28,28,0.85)"
+    _neg_border = "#FFAB40" if act == "WALMART" else "#EF9A9A"
 
     _gen_active = s_rank_gen or w_rank_tiendas or c_rank_gen
     _pas_active = s_rank_pas or w_rank_pastas  or c_rank_pas
     _oli_active = s_rank_oli or w_rank_olivas  or c_rank_oli
     _nut_active = s_rank_nut or w_nutri_top10  or c_rank_nut
 
+    # Estructura: (Label, BG_Color, Text_Color, Is_Active, Border_Active, Shadow_Active, Grayscale, Border_Inactive)
     STYLES = [
+        # Navegación principal
         ("SORIANA",  "linear-gradient(135deg,#D32F2F,#B71C1C)", "#ffffff", act=="SORIANA",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         ("WALMART",  "linear-gradient(135deg,#0071DC,#005BB5)", "#ffffff", act=="WALMART",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         ("CHEDRAUI", "linear-gradient(135deg,#FF6600,#E65100)", "#ffffff", act=="CHEDRAUI", "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
+        
+        # Acciones exclusivas
         ("🔴 INV SIN VENTA", "#D32F2F", "#ffffff", s_rojo, "#ffffff", "rgba(211,47,47,0.85)", False, "#ef9a9a"),
         ("🚚 PEDIDOS EN TRANSITO", "#8507F0", "#ffffff", s_transito, "#ffffff", "rgba(176,108,240,0.85)", False, "#CE93D8"),
-        ("🔴 SIN VTA 4SEM",  "#D32F2F", "#ffffff", w_4w,   "#ffffff", "rgba(0,113,220,0.85)", False, "#90CAF9"),
-        ("📅 DIAS INV",    _dias_bg, "#ffffff", _dias_active, "#ffffff", _dias_shadow,  False, _dias_border_inact),
-        ("📋 DIAS X PROD", _prod_bg, "#ffffff", _prod_active, "#ffffff", _prod_shadow, False, _prod_border_inact),
-        ("📉 NEGATIVOS",   _neg_bg,  "#ffffff", _neg_active,  "#ffffff", _neg_shadow,  False, _neg_border_inact),
+        ("🔴 SIN VTA 4SEM",  "#D32F2F", "#ffffff", w_4w,   "#ffffff", "rgba(211,47,47,0.85)", False, "#90CAF9"),
+        
+        # Acciones compartidas (Dinámicas)
+        ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", _dias_shadow,  False, "#80CBC4"),
+        ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(0,105,92,0.85)", False, "#CE93D8"),
+        ("📉 NEGATIVOS",   "#D32F2F", "#ffffff", _neg_active,  "#ffffff", _neg_shadow,   False, _neg_border),
+        
+        # Ranking Institucional
         ("📊 GENERAL",  "#FFFFFF","#5AB027", _gen_active, "#D4D4D4","rgba(46,125,50,0.70)", False, "#D4D4D4"),
         ("🍝 PASTAS",   "#DBBB35","#FFFFFF", _pas_active, "#D4D4D4","rgba(240,228,2,0.70)", True,  "transparent"),
         ("🫒 OLIVAS",   "#4E5C02","#FFFFFF", _oli_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
@@ -682,6 +685,7 @@ def inject_button_styles():
         js_cases.append(f"if(t==='{esc}'){{{props}}}")
 
     all_cases = "\n        ".join(js_cases)
+
     html_code = f"""
 <script>
 (function() {{
@@ -742,7 +746,6 @@ st.markdown(f"<div style='text-align:right;font-size:0.7rem;color:{status_color}
 
 # --- 10. CARGA AUTOMÁTICA PARALELA AL INICIAR ---
 if not st.session_state.data_loaded:
-    # Fix 7: re-verificar conectividad real antes de intentar descargar
     st.session_state.is_online = _check_online()
 
 if not st.session_state.data_loaded and st.session_state.is_online:
@@ -754,9 +757,8 @@ if not st.session_state.data_loaded and st.session_state.is_online:
     st.session_state.data_loaded = True
 
 elif not st.session_state.data_loaded and not st.session_state.is_online:
-    st.session_state.data_loaded = True  # Marcar como intentado; pedirá archivos abajo
+    st.session_state.data_loaded = True
 
-# Mostrar errores de carga si los hubo
 if st.session_state.load_errors:
     for k, err in st.session_state.load_errors.items():
         st.warning(f"⚠️ {k}: {err}")
@@ -768,14 +770,12 @@ with col2: st.button("WALMART",  on_click=set_retailer, args=("WALMART",),  use_
 with col3: st.button("CHEDRAUI", on_click=set_retailer, args=("CHEDRAUI",), use_container_width=True)
 st.markdown("<hr style='margin:15px 0;border:0;border-top:1px solid #eee;'>", unsafe_allow_html=True)
 
-# --- 12. HELPER: OBTENER DATOS (online ya cargados o pedir upload offline) ---
+# --- 12. HELPER: OBTENER DATOS ---
 def get_cached_or_upload(key, uploader_key, load_func):
-    """Si ya tenemos datos en session_state los devuelve; si no, pide archivo."""
     df_key_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
     df = st.session_state.get(df_key_map[key])
     if df is not None:
         return df
-    # Fallback: upload manual
     st.warning(f"⚠️ No se pudo cargar {key} automáticamente. Cargue el archivo manualmente.")
     f = st.file_uploader(f"📂 Cargar Excel {key}", type=["xlsx"], key=uploader_key)
     if f:
@@ -786,14 +786,11 @@ def get_cached_or_upload(key, uploader_key, load_func):
         return df
     return None
 
-
 @st.cache_data(show_spinner=False, ttl=14400)
 def _unique_sorted(series_hash: int, vals_tuple: tuple) -> list:
-    """Cachea sorted(unique()) — se recalcula solo si cambia el contenido del df."""
     return sorted(vals_tuple)
 
 def _us(series) -> list:
-    """Shorthand: unique sorted con caché por contenido."""
     vals = tuple(series.dropna().unique())
     return _unique_sorted(hash(vals), vals)
 
@@ -861,7 +858,7 @@ def view_soriana(df_s):
         elif st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
             target_list = _SOR_DIAS_PROD
-            desc_clean_col = dff["DESCRIPCION"].str.upper().str.replace(r'&NBSP;',' ',regex=True).str.replace(" ","",regex=False)
+            desc_clean_col = dff["DESCRIPCION"].str.upper().str.replace(r'&NBSP;',' ',regex=True).str.strip()
             res_rows = []
             for item in target_list:
                 clean_item = item.upper().replace("&NBSP;","").replace(" ","")
@@ -878,7 +875,7 @@ def view_soriana(df_s):
             st.subheader("📅 Reporte Días Inventario")
             val_nut = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE DE SOYA NUTRIOLI BOT 850 ML")
             val_sab = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE COMESTIBLE SABROSANO 850 ML")
-            mask_pastas = dff["DESC_NORM"].str.contains("PASTA", na=False)  # Fix4: usa DESC_NORM
+            mask_pastas = dff["DESC_NORM"].str.contains("PASTA", na=False) 
             val_pas = dff.loc[mask_pastas,"DIAS_INV"].mean() if mask_pastas.any() else 0
             k1,k2,k3 = st.columns(3)
             k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
@@ -1097,7 +1094,6 @@ def view_walmart(df_w):
             st.dataframe(final_rank.style.format(fmt_dict), use_container_width=True, hide_index=True, height=auto_height(final_rank))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
-
 def view_chedraui(df_c):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
 
@@ -1151,17 +1147,20 @@ def view_chedraui(df_c):
         else:
             desc_c = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["ARTICULO"].fillna("").str.upper().str.replace(" ","",regex=False)
             conditions_c = [
-                desc_c.str.contains("BALSAMICO",na=False), desc_c.str.contains("SABROSANO",na=False),
-                desc_c.str.contains("GRANTRADICION",na=False), desc_c.str.contains("MISAZON|MISAZÓN",na=False),
-                desc_c.str.contains("AVE",na=False)&desc_c.str.contains("SOYA-CANOLA|AEROSOL",na=False),
-                desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
-                desc_c.str.contains("OLI",na=False)&desc_c.str.contains("OLIVA|EV|AEROSOL",na=False),
-                desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("400ML|850ML",na=False)&~desc_c.str.contains("PROTECT|DEFENSAS",na=False),
+                desc_c.str.contains("BALSAMICO",na=False), 
+                desc_c.str.contains("SABROSANO",na=False), 
+                desc_c.str.contains("GRANTRADICION",na=False), 
+                desc_c.str.contains("MISAZON|MISAZÓN",na=False), 
+                desc_c.str.contains("AVE",na=False)&desc_c.str.contains("SOYA-CANOLA|AEROSOL",na=False), 
+                desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False), 
+                desc_c.str.contains("OLI",na=False)&desc_c.str.contains("OLIVA|EV|AEROSOL",na=False), 
+                desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("400ML|850ML",na=False)&~desc_c.str.contains("PROTECT|DEFENSAS",na=False), 
                 desc_c.str.contains("NUTRIOLI",na=False)
             ]
             conditions_c = [c.to_numpy(dtype=bool) for c in conditions_c]
             choices_c = ["BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
             dff=dff.copy(); dff['Category']=np.select(conditions_c,choices_c,default=None)
+            
             c_kpi,c_chart = st.columns([1,2])
             with c_kpi:
                 total_so = dff['SELL_OUT'].sum()
