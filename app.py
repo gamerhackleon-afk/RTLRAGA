@@ -31,9 +31,8 @@ RETAILER_COLORS = {
     "CHEDRAUI": "#FF6600"
 }
 
-# --- FUNCIÓN DE CONECTIVIDAD (definida ANTES de session_state para evitar NameError) ---
+# --- FUNCIÓN DE CONECTIVIDAD ---
 def _check_online() -> bool:
-    """Verifica conectividad en tiempo real (Fix 7)."""
     try:
         requests.head("https://github.com", timeout=2)
         return True
@@ -50,7 +49,6 @@ if 'active_retailer' not in st.session_state:
 if 'confirm_reset' not in st.session_state:
     st.session_state.confirm_reset = False
 
-# Flags de precarga
 if 'data_loaded' not in st.session_state:
     st.session_state.data_loaded = False
 
@@ -66,7 +64,6 @@ if 'df_chedraui' not in st.session_state:
 if 'load_errors' not in st.session_state:
     st.session_state.load_errors = {}
 
-# --- INICIALIZACIÓN DE VARS DE VISTA (una sola vez, no en cada render) ---
 _view_vars = [
     's_rojo','s_dias_inv','s_dias_prod','s_transito',
     's_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut',
@@ -83,15 +80,13 @@ def safe_mean(series):
     return series.mean() if not series.empty else 0
 
 def apply_filters(df, filter_cols, selections):
-    """Fix 4: verifica que la columna exista antes de filtrar para evitar KeyError."""
     mask = pd.Series(True, index=df.index)
     for col, sel in zip(filter_cols, selections):
-        if sel and col in df.columns:          # ← guard de columna
+        if sel and col in df.columns:
             mask &= df[col].isin(sel)
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
-    # Fix 5: fillna("") antes de operaciones str para evitar NaN silenciosos
     clean_desc = df[desc_col].fillna("").str.upper().str.replace("&NBSP;", "", regex=False).str.replace(" ", "", regex=False)
     clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
     mask = clean_desc.str.contains(clean_pattern, case=False, na=False)
@@ -109,11 +104,6 @@ def convert_df_to_excel(df):
 
 @st.cache_data(show_spinner=False, ttl=14400)
 def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
-    """
-    Cachea la figura Plotly por combinación de datos+colores.
-    pie_df_json es el DataFrame serializado como JSON para que sea hashable.
-    Evita reconstruir el gráfico en cada re-render del script.
-    """
     import json
     pie_df = pd.read_json(pie_df_json)
     fig = px.pie(
@@ -132,69 +122,40 @@ def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
     )
     return fig
 
-# --- SESSION HTTP GLOBAL (variable de módulo — segura para threads, no session_state) ---
+# --- SESSION HTTP GLOBAL ---
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 def _build_session() -> requests.Session:
     session = requests.Session()
-    retry = Retry(
-        total=3,
-        backoff_factor=0.4,
-        status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=["GET", "HEAD"],
-        raise_on_status=False,
-    )
-    adapter = HTTPAdapter(
-        max_retries=retry,
-        pool_connections=6,
-        pool_maxsize=6,
-    )
+    retry = Retry(total=3, backoff_factor=0.4, status_forcelist=[429, 500, 502, 503, 504], allowed_methods=["GET", "HEAD"], raise_on_status=False)
+    adapter = HTTPAdapter(max_retries=retry, pool_connections=6, pool_maxsize=6)
     session.mount("https://", adapter)
     session.mount("http://",  adapter)
-    session.headers.update({
-        "User-Agent":      "Mozilla/5.0",
-        "Accept-Encoding": "gzip, deflate",
-        "Connection":      "keep-alive",
-    })
+    session.headers.update({"User-Agent": "Mozilla/5.0", "Accept-Encoding": "gzip, deflate", "Connection": "keep-alive"})
     return session
 
-# Variable de módulo: existe una vez por proceso Python, accesible desde cualquier thread
 _HTTP_SESSION = _build_session()
 
 def download_file_fast(url: str):
-    """
-    Descarga optimizada:
-    - Session Keep-Alive: reutiliza TCP, elimina handshake TLS repetido
-    - ETag: devuelve caché si el archivo no cambió en GitHub
-    - Streaming chunked 256 KB: empieza a procesar mientras llega
-    - Timeout (connect=5s, read=30s): falla rápido si no hay red
-    - Retry automático vía HTTPAdapter
-    """
     etag_key  = f'etag_{url}'
     cache_key = f'cached_file_{url}'
-
     headers = {"If-None-Match": st.session_state.get(etag_key, "")}
 
     try:
         response = _HTTP_SESSION.get(url, headers=headers, timeout=(5, 30), stream=True)
-
         if response.status_code == 304:
             cached = st.session_state.get(cache_key)
             if cached is not None:
                 cached.seek(0)
                 return cached
-            # Caché local ausente — forzar re-descarga sin ETag
             st.session_state.pop(etag_key, None)
             response = _HTTP_SESSION.get(url, timeout=(5, 30), stream=True)
-
         response.raise_for_status()
 
         buf = BytesIO()
         for chunk in response.iter_content(chunk_size=256 * 1024):
-            if chunk:
-                buf.write(chunk)
-
+            if chunk: buf.write(chunk)
         st.session_state[etag_key] = response.headers.get("ETag", "")
 
         raw = buf.getvalue()
@@ -204,7 +165,6 @@ def download_file_fast(url: str):
 
         buf.seek(0)
         return buf
-
     except requests.exceptions.Timeout:
         st.session_state.is_online = _check_online()
         return None
@@ -214,100 +174,16 @@ def download_file_fast(url: str):
 def download_file(url_or_file):
     if isinstance(url_or_file, str):
         return download_file_fast(url_or_file)
-    url_or_file.seek(0)   # garantizar seek(0) también en uploads manuales
+    url_or_file.seek(0)
     return url_or_file
 
 def set_retailer(retailer_name):
     st.session_state.active_retailer = retailer_name
-    logic_vars = [
-        's_rojo','s_dias_inv','s_dias_prod','s_transito','s_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut',
-        'w_neg','w_4w','w_dias_inv','w_dias_prod','w_rank_tiendas','w_rank_pastas','w_rank_olivas','w_nutri_top10',
-        'c_neg_zero','c_dias_inv','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut'
-    ]
-    for var in logic_vars:
+    for var in _view_vars:
         if var in st.session_state:
             st.session_state[var] = False
 
-# --- 4. LECTURA DE EXCEL OPTIMIZADA ---
-def optimize_floats(df):
-    for col in df.select_dtypes(include=['float64']).columns:
-        df[col] = df[col].astype('float32')
-    return df
-
-def _str_cols(df, cols):
-    for c in cols:
-        if c in df.columns:
-            df[c] = df[c].astype(str)
-    return df
-
-@st.cache_data(**CACHE_CONFIG)
-def load_sor(path):
-    try:
-        source = download_file(path)
-        if source is None: return None
-        needed_cols = [0, 2, 3, 4, 5, 6, 7, 8, 21, 22, 23, 24, 25, 26, 27, 28, 30]
-        try:
-            df = pd.read_excel(source, engine='calamine', usecols=needed_cols)
-        except Exception:
-            source.seek(0)
-            df = pd.read_excel(source, engine='openpyxl', usecols=needed_cols)
-        # Fix 1: validar que el Excel tenga las columnas esperadas antes de indexar
-        if len(df.columns) < 17:
-            return None
-        col_map = {
-            df.columns[0]:  "RESURTIMIENTO", df.columns[1]:  "CODIGO", df.columns[2]:  "DESCRIPCION",
-            df.columns[3]:  "NO_TIENDA", df.columns[4]:  "TIENDA", df.columns[5]:  "CIUDAD",
-            df.columns[6]:  "ESTADO", df.columns[7]:  "FORMATO", df.columns[8]:  "SEM1",
-            df.columns[9]:  "SEM2", df.columns[10]: "SEM3", df.columns[11]: "SO_$",
-            df.columns[12]: "PEDIDOS", df.columns[13]: "FECHA_ENTREGA", df.columns[14]: "CANTIDAD_PZS",
-            df.columns[15]: "INV_CAJAS", df.columns[16]: "DIAS_INV",
-        }
-        df.rename(columns=col_map, inplace=True)
-        df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
-        for c in ["DIAS_INV", "INV_CAJAS", "SO_$", "SEM1", "SEM2", "SEM3", "PEDIDOS", "CANTIDAD_PZS"]:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        df["FECHA_ENTREGA"] = df["FECHA_ENTREGA"].fillna("").astype(str).replace("nan", "")
-        df['SO_4SEM'] = df[["SEM1", "SEM2", "SEM3", "SO_$"]].sum(axis=1)
-        df['SIN_VTA'] = (df['SO_4SEM'] == 0)
-        df['VTA_PROM'] = df['SO_4SEM']
-        df = _str_cols(df, ["RESURTIMIENTO", "NO_TIENDA", "TIENDA", "CIUDAD", "ESTADO", "FORMATO", "DESCRIPCION"])
-        # Fix 5+6: columna de descripción normalizada precalculada una sola vez (evita recalcular en cada str.contains)
-        df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
-        return optimize_floats(df)
-    except Exception:
-        return None
-
-@st.cache_data(**CACHE_CONFIG)
-def load_wal(path):
-    try:
-        source = download_file(path)
-        if source is None: return None
-        needed_cols = [0, 4, 5, 7, 15, 16, 18, 33, 42, 73, 74, 75, 76, 95, 96]
-        try:
-            df = pd.read_excel(source, engine='calamine', usecols=needed_cols)
-        except Exception:
-            source.seek(0)
-            df = pd.read_excel(source, engine='openpyxl', usecols=needed_cols)
-        # Fix 1: validar columnas antes de indexar
-        if len(df.columns) < 15:
-            return None
-        col_map = {df.columns[0]:"CODIGO",df.columns[1]:"DESCRIPCION",df.columns[2]:"CATEGORIA",
-                   df.columns[3]:"ESTADO",df.columns[4]:"TIENDA",df.columns[5]:"FORMATO",
-                   df.columns[6]:"MARCA",df.columns[7]:"DIAS_INV",df.columns[8]:"EXISTENCIA",
-                   df.columns[9]:"VTA_S1",df.columns[10]:"VTA_S2",df.columns[11]:"VTA_S3",
-                   df.columns[12]:"VTA_S4",df.columns[13]:"SO_SEM_ANT",df.columns[14]:"SO_$"}
-        df.rename(columns=col_map, inplace=True)
-        df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
-        for c in ["DIAS_INV","EXISTENCIA","VTA_S1","VTA_S2","VTA_S3","VTA_S4","SO_SEM_ANT","SO_$"]:
-            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-        df['PROM_PZS_MENSUAL'] = df[["VTA_S1","VTA_S2","VTA_S3","VTA_S4"]].mean(axis=1)
-        df = _str_cols(df, ["CODIGO","DESCRIPCION","CATEGORIA","ESTADO","TIENDA","FORMATO","MARCA"])
-        # Fix 5+6: descripción normalizada precalculada
-        df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
-        return optimize_floats(df)
-    except Exception:
-        return None
-
+# --- 4. MOTOR INTELIGENTE DE LECTURA DE COLUMNAS ---
 def find_col(df, candidates):
     for name in candidates:
         for col in df.columns:
@@ -336,13 +212,136 @@ def validate_columns(df, retailer, required_cols_dict):
     df = df.rename(columns=mapeo)
     return df[list(required_cols_dict.keys())]
 
+def optimize_floats(df):
+    for col in df.select_dtypes(include=['float64']).columns:
+        df[col] = df[col].astype('float32')
+    return df
+
+def _str_cols(df, cols):
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].astype(str)
+    return df
+
+# --- LOADERS ---
+@st.cache_data(**CACHE_CONFIG)
+def load_sor(path):
+    try:
+        source = download_file(path)
+        if source is None: return None
+        
+        try:
+            df = pd.read_excel(source, engine='calamine')
+        except Exception:
+            source.seek(0)
+            df = pd.read_excel(source, engine='openpyxl')
+            
+        SORIANA_COLS = {
+            "RESURTIMIENTO": ["Resurtible"],
+            "CODIGO": ["Código de Barras Ragasa", "Codigo de Barras", "Codigo"],
+            "DESCRIPCION": ["Descripción", "Descripcion"],
+            "NO_TIENDA": ["No tienda", "No. Tienda", "# Tienda"],
+            "TIENDA": ["Nombre Tienda", "Tienda"],
+            "CIUDAD": ["Ciudad"],
+            "ESTADO": ["Estado"],
+            "FORMATO": ["Formato"],
+            "PEDIDOS": ["# PEDIDOS", "PEDIDOS"],
+            "FECHA_ENTREGA": ["PROXIMA ENTREGA", "FECHA ENTREGA"],
+            "CANTIDAD_PZS": ["CANTIDAD PROX A LLEGAR", "CANTIDAD PZS"],
+            "INV_CAJAS": ["INV CAJAS", "INVENTARIO CAJAS"],
+            "DIAS_INV": ["DIAS INV TENDENCIA", "DIAS INV"]
+        }
+        
+        # Búsqueda dinámica de las últimas 4 semanas sin depender del nombre "S10"
+        pedidos_col = find_col(df, ["# PEDIDOS", "PEDIDOS"])
+        if pedidos_col:
+            pedidos_idx = list(df.columns).index(pedidos_col)
+            last_4_cols = df.columns[pedidos_idx-4 : pedidos_idx]
+            for c in last_4_cols:
+                df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            df["SO_4SEM"] = df[last_4_cols].sum(axis=1)
+            df["SO_$"] = df[last_4_cols[-1]] # Tomamos la semana más reciente como principal
+        else:
+            df["SO_4SEM"] = 0
+            df["SO_$"] = 0
+            
+        SORIANA_COLS["SO_$"] = ["SO_$"]
+        SORIANA_COLS["SO_4SEM"] = ["SO_4SEM"]
+        
+        df = validate_columns(df, "SORIANA", SORIANA_COLS)
+        if df is None: return None
+        
+        df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
+        for c in ["DIAS_INV", "INV_CAJAS", "SO_$", "SO_4SEM", "PEDIDOS", "CANTIDAD_PZS"]:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            
+        df["FECHA_ENTREGA"] = df["FECHA_ENTREGA"].fillna("").astype(str).replace("nan", "")
+        df['SIN_VTA'] = (df['SO_4SEM'] == 0)
+        df['VTA_PROM'] = df['SO_4SEM']
+        
+        df = _str_cols(df, ["RESURTIMIENTO", "NO_TIENDA", "TIENDA", "CIUDAD", "ESTADO", "FORMATO", "DESCRIPCION"])
+        df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
+        return optimize_floats(df)
+    except Exception as e:
+        st.error(f"Error procesando Soriana: {e}")
+        return None
+
+@st.cache_data(**CACHE_CONFIG)
+def load_wal(path):
+    try:
+        source = download_file(path)
+        if source is None: return None
+        
+        try:
+            df = pd.read_excel(source, engine='calamine')
+        except Exception:
+            source.seek(0)
+            df = pd.read_excel(source, engine='openpyxl')
+            
+        WALMART_COLS = {
+            "CODIGO": ["UPC"],
+            "DESCRIPCION": ["Item Desc"],
+            "CATEGORIA": ["Category Name"],
+            "ESTADO": ["EDO"],
+            "TIENDA": ["Store Name"],
+            "FORMATO": ["Business Format"],
+            "MARCA": ["Marca"],
+            "DIAS_INV": ["DDI OH"],
+            "EXISTENCIA": ["OH"],
+            "VTA_S1": ["SO - 4 P"],
+            "VTA_S2": ["SO - 3 P"],
+            "VTA_S3": ["SO - 2 P"],
+            "VTA_S4": ["SO - 1 P"],
+            "SO_SEM_ANT": ["SO - 1 $"],
+            "SO_$": ["Sell out Valor corriendo"]
+        }
+        
+        df = validate_columns(df, "WALMART", WALMART_COLS)
+        if df is None: return None 
+
+        df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
+        for c in ["DIAS_INV", "EXISTENCIA", "VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4", "SO_SEM_ANT", "SO_$"]:
+            df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
+            
+        df['PROM_PZS_MENSUAL'] = df[["VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4"]].mean(axis=1)
+        df = _str_cols(df, ["CODIGO", "DESCRIPCION", "CATEGORIA", "ESTADO", "TIENDA", "FORMATO", "MARCA"])
+        df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
+        return optimize_floats(df)
+    except Exception as e:
+        st.error(f"Error procesando Walmart: {e}")
+        return None
+
 @st.cache_data(**CACHE_CONFIG)
 def load_che(path):
     try:
         source = download_file(path)
         if source is None: return None
         
-        df = pd.read_excel(source, engine='openpyxl')
+        try:
+            df = pd.read_excel(source, engine='calamine')
+        except Exception:
+            source.seek(0)
+            df = pd.read_excel(source, engine='openpyxl')
         
         CHEDRAUI_COLS = {
             "ESTADO": ["ESTADO", "Estado"],
@@ -378,9 +377,8 @@ def load_che(path):
         st.error(f"Error procesando Chedraui: {e}")
         return None
 
-
 # ══════════════════════════════════════════════════════════════════════
-# LISTAS DE PRODUCTOS — constantes de módulo
+# LISTAS DE PRODUCTOS
 # ══════════════════════════════════════════════════════════════════════
 _SOR_DIAS_PROD = ["ACEITE DE SOYA NUTRIOLI BOT 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE SABROSANO 850 ML","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE OLIVA OLI PURO SPRAY 145 ML","ACEITE OLIVA OLI EV SPRAY 145 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR","VINAGRE BALSAMICO 250ML"]
 _SOR_RANK_GEN  = ["ACEITE COMESTIBLE NUTRIOLI ANTIGOTEO 700","ACEITE COMESTIBLE GRAN TRADICION 900 ML","ACEITE COMESTIBLE SABROSANO +30 850 ML","ACEITE OLIVA OLI PURO SPRAY 145 ML","JUSTO 850 ML","ACEITE COMESTIBLE AEROSOL 170GR","ACEITE COMESTIBLE AVE 850 ML","ACEITE COMESTIBLE NUTRIOLI 400 ML","ACEITE COMESTIBLE NUTRIOLI AEROSOL 180ML","ACEITE COMESTIBLE NUTRIOLI DHA 850 ML","ACEITE COMESTIBLE SABROSANO 850 ML","SABROSANO RINDE+ 850 ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 250ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 500ML","ACEITE OLI OLIVA EXTRA VIRGEN PZ 750ML","ADERE OLI OLIVA PARA COCINAR 500 ML OLI","ADERE OLI OLIVA PARA COCINAR 750 ML OLI","ADEREZO OLI 250 ML PZ","ADEREZO OLI 500 ML BOT","ACEITE COMESTIBLE GRAN TRADICION 800 ML","ACEITE DE SOYA NUTRIOLI BOT 850 ML","VINAGRE BALSAMICO 250ML","ACEITE NUTRIOLI PROTECT DEFENSAS 850ML","ACEITE NUTRIOLI PROTECT MENTE 850 ML","PASTA FIDEO NUTRIOLI 200GR","PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","PASTA FUSILLI INTEGRAL NUTRIOLI 200GR","PASTA CODO NUTRIOLI VERDURAS 200GR","PASTA FUSILLI VERDURAS NUTRIOLI 450GR","PASTA SPAGHETTI NUTRIOLI 200GR","PASTA CODO NUTRIOLI 200GR"]
@@ -395,47 +393,29 @@ _CHE_RANK_PAS  = ["Pps Nutrioli Fusilli Integral (3878678)","Pps Nutrioli Spague
 _CHE_RANK_OLI  = ["Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli Bote 750 Ml (3570620)","Ace Oliva EV Oli BOT 500 Ml (3368446)","Ace Oliva Puro Oli BOT 500 Ml (3570614)","Ace Oliva EV Oli BOT 250 Ml (3284690)","Aceite Oli Extra Virgen 500 Ml (3646332)","Aceite de Oliva Oli Nutrioli 250 Ml (3679970)","Aceite Aerosol Oli Oliva 145 Ml (3679971)","Ace Oliva EV Oli BOT 500 Ml (3428657)"]
 _CHE_RANK_NUT  = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
 
-_SOR_RANK_GEN_SET  = frozenset(s.strip() for s in _SOR_RANK_GEN)
-_SOR_RANK_PAS_SET  = frozenset(s.strip() for s in _SOR_RANK_PAS)
-_SOR_RANK_OLI_SET  = frozenset(s.strip() for s in _SOR_RANK_OLI)
-_SOR_RANK_NUT_SET  = frozenset(s.strip() for s in _SOR_RANK_NUT)
-_CHE_RANK_GEN_SET  = frozenset(s.strip() for s in _CHE_RANK_GEN)
-_CHE_RANK_PAS_SET  = frozenset(s.strip() for s in _CHE_RANK_PAS)
-_CHE_RANK_OLI_SET  = frozenset(s.strip() for s in _CHE_RANK_OLI)
-_CHE_RANK_NUT_SET  = frozenset(s.strip() for s in _CHE_RANK_NUT)
-
-_SOR_DIAS_PROD_NORM = [s.upper().replace("&NBSP;","").replace(" ","") for s in _SOR_DIAS_PROD]
-_WAL_DIAS_PROD_NORM = [s.upper().replace("&NBSP;","").replace(" ","") for s in _WAL_DIAS_PROD]
-
-# --- 5. CARGA PARALELA DE LAS 3 BASES ---
+# --- 5. CARGA PARALELA ---
 def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
     try:
         buf = download_file_fast(URLS_DB[key])
-        if buf is None:
-            return key, None, "No se pudo descargar el archivo."
+        if buf is None: return key, None, "No se pudo descargar el archivo."
         return key, buf, None
-    except Exception as e:
-        return key, None, str(e)
+    except Exception as e: return key, None, str(e)
 
 def _parse_raw(key: str, buf: BytesIO):
     NEEDED = {"SORIANA": 17, "WALMART": 15, "CHEDRAUI": 13}
     try:
         buf.seek(0)
-        try:
-            df = pd.read_excel(buf, engine='calamine')
+        try: df = pd.read_excel(buf, engine='calamine')
         except Exception:
             buf.seek(0)
             df = pd.read_excel(buf, engine='openpyxl')
-        if len(df.columns) < NEEDED[key]:
-            return key, None, f"Columnas insuficientes ({len(df.columns)} < {NEEDED[key]})"
+        if len(df.columns) < NEEDED[key]: return key, None, f"Columnas insuficientes ({len(df.columns)} < {NEEDED[key]})"
         buf.seek(0)
         loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
         df = loaders[key](buf)
-        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
-            return key, None, "Archivo vacío o sin columnas válidas."
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty: return key, None, "Archivo vacío o sin columnas válidas."
         return key, df, None
-    except Exception as e:
-        return key, None, str(e)
+    except Exception as e: return key, None, str(e)
 
 def _load_one(key: str) -> tuple[str, object, str | None]:
     loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
@@ -448,29 +428,17 @@ def _load_one(key: str) -> tuple[str, object, str | None]:
         return key, None, str(e)
 
 def load_all_parallel():
-    keys    = list(URLS_DB.keys())
+    keys = list(URLS_DB.keys())
     results = {}
-    errors  = {}
+    errors = {}
 
     st.markdown("""
     <style>
-    .loader-wrap {
-        display:flex; flex-direction:column; align-items:center;
-        justify-content:center; padding: 60px 20px;
-    }
-    .loader-title {
-        font-size:1.6rem; font-weight:800; color:#333;
-        margin-bottom:8px; text-align:center;
-    }
-    .loader-sub {
-        font-size:0.95rem; color:#777; margin-bottom:32px; text-align:center;
-    }
+    .loader-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 60px 20px; }
+    .loader-title { font-size:1.6rem; font-weight:800; color:#333; margin-bottom:8px; text-align:center; }
+    .loader-sub { font-size:0.95rem; color:#777; margin-bottom:32px; text-align:center; }
     .retailer-badges { display:flex; gap:16px; margin-bottom:32px; flex-wrap:wrap; justify-content:center; }
-    .badge {
-        padding:8px 20px; border-radius:20px; font-weight:700;
-        font-size:0.85rem; color:white; opacity:0.4;
-        transition: opacity 0.3s;
-    }
+    .badge { padding:8px 20px; border-radius:20px; font-weight:700; font-size:0.85rem; color:white; opacity:0.4; transition: opacity 0.3s; }
     .badge.done { opacity:1; }
     .badge-sor { background:#D32F2F; }
     .badge-wal { background:#0071DC; }
@@ -498,10 +466,7 @@ def load_all_parallel():
         </div>
         """, unsafe_allow_html=True)
         progress_bar.progress(pct)
-        status_text.markdown(
-            f"<p style='text-align:center;color:#555;font-size:0.9rem;'>{msg} — <b>{int(pct*100)}%</b></p>",
-            unsafe_allow_html=True
-        )
+        status_text.markdown(f"<p style='text-align:center;color:#555;font-size:0.9rem;'>{msg} — <b>{int(pct*100)}%</b></p>", unsafe_allow_html=True)
 
     render_screen(0.0, "Conectando a GitHub CDN…", set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
     raw_buffers = {}
@@ -512,15 +477,10 @@ def load_all_parallel():
         future_map = {executor.submit(_download_raw, k): k for k in keys}
         for future in as_completed(future_map):
             key, buf, err = future.result()
-            if buf is not None:
-                raw_buffers[key] = buf
-            else:
-                errors[key] = err or "Error de descarga"
-                results[key] = None
+            if buf is not None: raw_buffers[key] = buf
+            else: errors[key] = err or "Error de descarga"; results[key] = None
             done_dl.add(key)
-            pct = 0.0 + (len(done_dl) / n) * 0.50
-            msg = f"⬇️ {key} descargado" if buf else f"⚠️ Error descargando {key}"
-            render_screen(pct, msg, done_dl if buf else set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
+            render_screen(0.0 + (len(done_dl)/n)*0.50, f"⬇️ {key} descargado" if buf else f"⚠️ Error descargando {key}", done_dl if buf else set(), "📡 Fase 1/2 — Descargando archivos en paralelo")
 
     render_screen(0.50, "Procesando archivos Excel…", set(), "⚙️ Fase 2/2 — Procesando Excel en paralelo")
     done_parse = set()
@@ -530,32 +490,19 @@ def load_all_parallel():
         future_map = {executor.submit(_parse_raw, k, raw_buffers[k]): k for k in keys_to_parse}
         for future in as_completed(future_map):
             key, df, err = future.result()
-            if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-                results[key] = df
+            if df is not None and isinstance(df, pd.DataFrame) and not df.empty: results[key] = df
             else:
                 results[key] = None
-                if not errors.get(key):
-                    errors[key] = err or "Parseo fallido"
+                if not errors.get(key): errors[key] = err or "Parseo fallido"
             done_parse.add(key)
-            pct = 0.50 + (len(done_parse) / n) * 0.50
-            msg = f"✅ {key} listo" if results.get(key) is not None else f"⚠️ Error en {key}"
-            render_screen(pct, msg, {k for k in done_parse if results.get(k) is not None},
-                          "⚙️ Fase 2/2 — Procesando Excel en paralelo")
+            render_screen(0.50 + (len(done_parse)/n)*0.50, f"✅ {key} listo" if results.get(key) is not None else f"⚠️ Error en {key}", {k for k in done_parse if results.get(k) is not None}, "⚙️ Fase 2/2 — Procesando Excel en paralelo")
 
     ok_count = sum(1 for v in results.values() if v is not None)
     progress_bar.progress(1.0)
-    status_text.markdown(
-        f"<p style='text-align:center;color:#28a745;font-weight:700;font-size:1rem;'>"
-        f"✅ ¡Carga completa! {ok_count}/{n} bases cargadas — 100%</p>",
-        unsafe_allow_html=True
-    )
+    status_text.markdown(f"<p style='text-align:center;color:#28a745;font-weight:700;font-size:1rem;'>✅ ¡Carga completa! {ok_count}/{n} bases cargadas — 100%</p>", unsafe_allow_html=True)
     time.sleep(0.5)
-    placeholder.empty()
-    progress_bar.empty()
-    status_text.empty()
-
+    placeholder.empty(); progress_bar.empty(); status_text.empty()
     return results, errors
-
 
 # --- 6. ESTADOS ACTUALES ---
 act          = st.session_state.active_retailer
@@ -592,12 +539,6 @@ def inject_button_styles():
     _prod_active = s_dias_prod or w_dias_prod
     _neg_active  = w_neg or c_neg_zero
 
-    # Resolviendo sombras condicionales de botones compartidos
-    _dias_shadow = "rgba(211,47,47,0.85)" if act == "SORIANA" else "rgba(0,105,92,0.85)"
-    
-    _neg_shadow = "rgba(211,47,47,0.85)" if act == "WALMART" else "rgba(183,28,28,0.85)"
-    _neg_border = "#FFAB40" if act == "WALMART" else "#EF9A9A"
-
     _gen_active = s_rank_gen or w_rank_tiendas or c_rank_gen
     _pas_active = s_rank_pas or w_rank_pastas  or c_rank_pas
     _oli_active = s_rank_oli or w_rank_olivas  or c_rank_oli
@@ -610,16 +551,16 @@ def inject_button_styles():
         ("WALMART",  "linear-gradient(135deg,#0071DC,#005BB5)", "#ffffff", act=="WALMART",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         ("CHEDRAUI", "linear-gradient(135deg,#FF6600,#E65100)", "#ffffff", act=="CHEDRAUI", "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
         
-        # Acciones exclusivas
+        # --- Botones de Acción SORIANA ---
         ("🔴 INV SIN VENTA", "#D32F2F", "#ffffff", s_rojo, "#ffffff", "rgba(211,47,47,0.85)", False, "#ef9a9a"),
         ("🚚 PEDIDOS EN TRANSITO", "#8507F0", "#ffffff", s_transito, "#ffffff", "rgba(176,108,240,0.85)", False, "#CE93D8"),
-        ("🔴 SIN VTA 4SEM",  "#D32F2F", "#ffffff", w_4w,   "#ffffff", "rgba(211,47,47,0.85)", False, "#90CAF9"),
         
-        # Acciones compartidas (Dinámicas)
-        ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", _dias_shadow,  False, "#80CBC4"),
-        ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(0,105,92,0.85)", False, "#CE93D8"),
-        ("📉 NEGATIVOS",   "#D32F2F", "#ffffff", _neg_active,  "#ffffff", _neg_shadow,   False, _neg_border),
+        # --- Botones de Acción WALMART ---
+        ("🔴 SIN VTA 4SEM",  "#D32F2F", "#ffffff", w_4w,   "#ffffff", "rgba(0,113,220,0.85)", False, "#90CAF9"),
         
+        # --- Botones de Acción CHEDRAUI ---
+        # (Los de Chedraui se definen abajo vía los condicionales para evitar duplicados en la matriz)
+
         # Ranking Institucional
         ("📊 GENERAL",  "#FFFFFF","#5AB027", _gen_active, "#D4D4D4","rgba(46,125,50,0.70)", False, "#D4D4D4"),
         ("🍝 PASTAS",   "#DBBB35","#FFFFFF", _pas_active, "#D4D4D4","rgba(240,228,2,0.70)", True,  "transparent"),
@@ -627,6 +568,24 @@ def inject_button_styles():
         ("🍃 NUTRIOLI", "#2E7D32","#FFD700", _nut_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
         ("🏆 NUTRIOLI", "#2E7D32","#FFD700", _nut_active, "#D4D4D4","rgba(46,125,50,0.70)", True,  "transparent"),
     ]
+    
+    # Manejo de botones dinámicos según Retailer para respetar la tabla del Prompt
+    if act == "SORIANA":
+        STYLES.extend([
+            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",  False, "#80CBC4"),
+            ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(74,20,140,0.85)", False, "#CE93D8"),
+        ])
+    elif act == "WALMART":
+        STYLES.extend([
+            ("📉 NEGATIVOS",   "#D32F2F", "#ffffff", _neg_active,  "#ffffff", "rgba(230,81,0,0.85)",  False, "#FFAB40"),
+            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",  False, "#80CBC4"),
+            ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(74,20,140,0.85)", False, "#CE93D8"),
+        ])
+    elif act == "CHEDRAUI":
+        STYLES.extend([
+            ("📉 NEGATIVOS",   "#B71C1C", "#ffffff", _neg_active,  "#ffffff", "rgba(183,28,28,0.85)", False, "#EF9A9A"),
+            ("📅 DIAS INV",    "#4E342E", "#ffffff", _dias_active, "#ffffff", "rgba(78,52,46,0.85)",  False, "#A1887F"),
+        ])
 
     js_cases = []
     for (label, bg, fg, active, border_act, shadow_act, gs, border_inact) in STYLES:
@@ -870,6 +829,7 @@ def view_soriana(df_s):
                     res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV": 0})
             df_prod_summary = pd.DataFrame(res_rows)
             st.dataframe(df_prod_summary.style.format({'DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(df_prod_summary), file_name="Soriana_Dias_Producto.xlsx", use_container_width=True)
 
         elif st.session_state.s_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -884,6 +844,7 @@ def view_soriana(df_s):
             disp = dff[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
             disp.columns = ['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Soriana_Reporte_Dias.xlsx", use_container_width=True)
 
         else:
             desc = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["DESCRIPCION"].fillna("").str.upper().str.replace(" ","",regex=False)
@@ -948,7 +909,6 @@ def view_soriana(df_s):
                 st.dataframe(final_s_rank.sort_values(by=rank_title_s,ascending=False).style.format({rank_title_s:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_s_rank))
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_s_rank), file_name="Soriana_Ranking.xlsx", use_container_width=True)
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
-
 
 def view_walmart(df_w):
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
@@ -1211,7 +1171,6 @@ def view_chedraui(df_c):
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
 # --- 14. EJECUTAR VISTA ACTIVA ---
-# inject_button_styles ANTES de las vistas: el JS ya está listo cuando el DOM se construye
 inject_button_styles()
 
 _act = st.session_state.active_retailer
