@@ -394,6 +394,22 @@ _CHE_RANK_OLI  = ["Ace Oliva EV Oli BOT 750 Ml (3284693)","Aceite Oliva Puro Oli
 _CHE_RANK_NUT  = ["Aceite De Soya Nutrioli Bot 850 Ml (3132396)"]
 
 # --- 5. CARGA PARALELA ---
+
+# Función cacheada con clave fija: actúa como almacén persistente entre reruns
+# Se usa como fuente de verdad en lugar de session_state para los DataFrames grandes
+@st.cache_data(ttl=14400, max_entries=3, show_spinner=False)
+def _get_cached_df(key: str) -> pd.DataFrame | None:
+    """Descarga y procesa un retailer. El resultado queda en cache 4 horas
+    y sobrevive a todos los reruns (cambio de pestaña, interacciones, etc.)."""
+    loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
+    try:
+        df = loaders[key](URLS_DB[key])
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            return None
+        return df
+    except Exception:
+        return None
+
 def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
     try:
         buf = download_file_fast(URLS_DB[key])
@@ -431,6 +447,20 @@ def load_all_parallel():
     keys = list(URLS_DB.keys())
     results = {}
     errors = {}
+
+    # ── FAST PATH: si el cache de Streamlit ya tiene los datos, no descargamos nada ──
+    cached_results = {}
+    for k in keys:
+        try:
+            cached_df = _get_cached_df(k)
+            if cached_df is not None and isinstance(cached_df, pd.DataFrame) and not cached_df.empty:
+                cached_results[k] = cached_df
+        except Exception:
+            pass
+    if len(cached_results) == len(keys):
+        # Todos los datos ya están en cache — retornar sin pantalla de carga
+        return cached_results, {}
+    # ────────────────────────────────────────────────────────────────────────────────
 
     st.markdown("""
     <style>
@@ -704,6 +734,18 @@ status_color = "#28a745"   if st.session_state.is_online else "#dc3545"
 st.markdown(f"<div style='text-align:right;font-size:0.7rem;color:{status_color};font-weight:bold;margin-top:-10px;margin-bottom:10px;'>● {status_txt}</div>", unsafe_allow_html=True)
 
 # --- 10. CARGA AUTOMÁTICA PARALELA AL INICIAR ---
+# Siempre revisamos el cache de Streamlit primero.
+# Si los DataFrames ya están cacheados (sobreviven cambios de pestaña y reruns),
+# los restauramos a session_state sin descargar nada de GitHub.
+_df_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
+_all_in_cache = all(_get_cached_df(k) is not None for k in _df_map)
+
+if _all_in_cache:
+    for k, ss_key in _df_map.items():
+        if st.session_state.get(ss_key) is None:
+            st.session_state[ss_key] = _get_cached_df(k)
+    st.session_state.data_loaded = True
+
 if not st.session_state.data_loaded:
     st.session_state.is_online = _check_online()
 
@@ -732,16 +774,30 @@ st.markdown("<hr style='margin:15px 0;border:0;border-top:1px solid #eee;'>", un
 # --- 12. HELPER: OBTENER DATOS ---
 def get_cached_or_upload(key, uploader_key, load_func):
     df_key_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
-    df = st.session_state.get(df_key_map[key])
-    if df is not None:
+    ss_key = df_key_map[key]
+
+    # 1) Buscar en session_state (más rápido, in-memory)
+    df = st.session_state.get(ss_key)
+    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
         return df
+
+    # 2) Buscar en cache de Streamlit (sobrevive reruns y cambios de pestaña)
+    try:
+        df = _get_cached_df(key)
+        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+            st.session_state[ss_key] = df  # Restaurar a session_state
+            return df
+    except Exception:
+        pass
+
+    # 3) Si no hay cache, ofrecer carga manual
     st.warning(f"⚠️ No se pudo cargar {key} automáticamente. Cargue el archivo manualmente.")
     f = st.file_uploader(f"📂 Cargar Excel {key}", type=["xlsx"], key=uploader_key)
     if f:
         with st.spinner(f"Procesando {key}..."):
             df = load_func(f)
         if df is not None:
-            st.session_state[df_key_map[key]] = df
+            st.session_state[ss_key] = df
         return df
     return None
 
