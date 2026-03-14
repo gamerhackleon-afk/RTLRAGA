@@ -95,6 +95,33 @@ def get_kpi_mean(df, desc_col, days_col, pattern):
 def auto_height(df):
     return min(max(len(df) * 35 + 45, 100), 600)
 
+def _filter_badge(filtros: dict, color_acento: str = "#0071DC"):
+    """Retorna un dict de anotación Plotly que flota arriba a la derecha
+    del gráfico. Retorna None si no hay filtros activos."""
+    lineas = []
+    for etiqueta, valores in filtros.items():
+        if valores:
+            vals_str = ", ".join(str(v) for v in valores[:3])
+            if len(valores) > 3:
+                vals_str += f" +{len(valores)-3}"
+            lineas.append(f"<b>{etiqueta}:</b> {vals_str}")
+    if not lineas:
+        return None  # Sin filtros activos
+    return dict(
+        text="<br>".join(lineas),
+        xref="paper", yref="paper",
+        x=0.99, y=1.12,
+        xanchor="right", yanchor="top",
+        showarrow=False,
+        bgcolor="rgba(255,255,255,0.92)",
+        bordercolor=color_acento,
+        borderwidth=1.5,
+        borderpad=8,
+        font=dict(size=12, family="Inter, Arial, sans-serif", color="#222222"),
+        align="left",
+    )
+
+
 @st.cache_data(show_spinner=False)
 def convert_df_to_excel(df):
     output = BytesIO()
@@ -577,9 +604,9 @@ def inject_button_styles():
     # Estructura: (Label, BG_Color, Text_Color, Is_Active, Border_Active, Shadow_Active, Grayscale, Border_Inactive)
     STYLES = [
         # Navegación principal
-        ("SORIANA",  "linear-gradient(135deg,#D32F2F,#B71C1C)", "#ffffff", act=="SORIANA",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
-        ("WALMART",  "linear-gradient(135deg,#0071DC,#005BB5)", "#ffffff", act=="WALMART",  "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
-        ("CHEDRAUI", "linear-gradient(135deg,#FF6600,#E65100)", "#ffffff", act=="CHEDRAUI", "#ffffff", "rgba(0,0,0,0.3)", False, "transparent"),
+        ("SORIANA",  "linear-gradient(135deg,#D32F2F,#B71C1C)", "#ffffff", act=="SORIANA",  "#ffffff", "rgba(255,41,0,0.85)",  False, "transparent"),
+        ("WALMART",  "linear-gradient(135deg,#0071DC,#005BB5)", "#ffffff", act=="WALMART",  "#ffffff", "rgba(0,47,255,0.85)",  False, "transparent"),
+        ("CHEDRAUI", "linear-gradient(135deg,#FF6600,#E65100)", "#ffffff", act=="CHEDRAUI", "#ffffff", "rgba(255,119,0,0.85)", False, "transparent"),
         
         # --- Botones de Acción SORIANA ---
         ("🔴 INV SIN VENTA", "#D32F2F", "#ffffff", s_rojo, "#ffffff", "rgba(211,47,47,0.85)", False, "#ef9a9a"),
@@ -602,19 +629,19 @@ def inject_button_styles():
     # Manejo de botones dinámicos según Retailer para respetar la tabla del Prompt
     if act == "SORIANA":
         STYLES.extend([
-            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",  False, "#80CBC4"),
-            ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(74,20,140,0.85)", False, "#CE93D8"),
+            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",    False, "#80CBC4"),
+            ("📋 DIAS X PROD", "#00695C", "#ffffff", _prod_active, "#ffffff", "rgba(22,199,130,0.85)",  False, "#80CBC4"),
         ])
     elif act == "WALMART":
         STYLES.extend([
-            ("📉 NEGATIVOS",   "#D32F2F", "#ffffff", _neg_active,  "#ffffff", "rgba(230,81,0,0.85)",  False, "#FFAB40"),
-            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",  False, "#80CBC4"),
-            ("📋 DIAS X PROD", "#1D362B", "#ffffff", _prod_active, "#ffffff", "rgba(74,20,140,0.85)", False, "#CE93D8"),
+            ("📉 NEGATIVOS",   "#D32F2F", "#ffffff", _neg_active,  "#ffffff", "rgba(230,81,0,0.85)",    False, "#FFAB40"),
+            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",    False, "#80CBC4"),
+            ("📋 DIAS X PROD", "#00695C", "#ffffff", _prod_active, "#ffffff", "rgba(22,199,130,0.85)",  False, "#80CBC4"),
         ])
     elif act == "CHEDRAUI":
         STYLES.extend([
-            ("📉 NEGATIVOS",   "#B71C1C", "#ffffff", _neg_active,  "#ffffff", "rgba(183,28,28,0.85)", False, "#EF9A9A"),
-            ("📅 DIAS INV",    "#4E342E", "#ffffff", _dias_active, "#ffffff", "rgba(78,52,46,0.85)",  False, "#A1887F"),
+            ("📉 NEGATIVOS",   "#B71C1C", "#ffffff", _neg_active,  "#ffffff", "rgba(183,28,28,0.85)",   False, "#EF9A9A"),
+            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",    False, "#80CBC4"),
         ])
 
     js_cases = []
@@ -707,13 +734,110 @@ html, body {{ font-family: 'Inter', sans-serif; background-color: #f8f9fa; }}
 .retailer-header {{ font-size: 1.2rem; font-weight: 800; color: white; padding: 10px 15px;
     border-radius: 8px; margin: 15px 0; text-align: center;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-shadow: 0 1px 2px rgba(0,0,0,0.2); }}
+/* Botones de acción: altura fija y fuente responsiva para uniformidad */
+div[data-testid="stHorizontalBlock"] button {{
+    font-size: clamp(0.55rem, 1.8vw, 0.85rem) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    min-height: 42px !important;
+    height: 42px !important;
+    padding: 0 6px !important;
+    line-height: 1 !important;
+}}
+/* Altura fija en multiselects para evitar saltos de layout al seleccionar */
+div[data-baseweb="select"] {{
+    min-height: 42px !important;
+}}
+div[data-baseweb="select"] > div:first-child {{
+    min-height: 42px !important;
+    flex-wrap: wrap !important;
+}}
+div[data-baseweb="select"] span {{
+    white-space: nowrap !important;
+}}
+/* Evitar que el expander cambie altura al agregar/quitar chips */
+div[data-testid="stExpander"] > div[data-testid="stExpanderDetails"] {{
+    overflow: visible !important;
+}}
 @media (max-width: 768px) {{
     .block-container {{ padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
     .retailer-header {{ font-size: 1rem; padding: 8px; margin: 10px 0; }}
     section[data-testid="stSidebar"] {{ display: none; }}
+    div[data-testid="stHorizontalBlock"] button {{
+        font-size: clamp(0.5rem, 3.2vw, 0.72rem) !important;
+        height: 42px !important;
+        min-height: 42px !important;
+    }}
 }}
 </style>
 """, unsafe_allow_html=True)
+
+# Bloquear scroll automático de Streamlit en cualquier interacción
+st.components.v1.html("""
+<script>
+(function() {
+    var doc = window.parent.document;
+    var win = window.parent;
+    var _savedY = null;
+    var _locked = false;
+
+    function saveScroll() {
+        _savedY = win.scrollY;
+    }
+
+    function restoreScroll() {
+        if (_savedY !== null) {
+            win.scrollTo({ top: _savedY, behavior: 'instant' });
+        }
+    }
+
+    function lockFor(ms) {
+        if (_locked) return;
+        _locked = true;
+        saveScroll();
+        var obs = new MutationObserver(function() {
+            win.scrollTo({ top: _savedY, behavior: 'instant' });
+        });
+        obs.observe(doc.body, { childList: true, subtree: true, attributes: true });
+        setTimeout(function() {
+            obs.disconnect();
+            _locked = false;
+        }, ms || 800);
+    }
+
+    // Capturar scroll antes de que Streamlit reactive en cualquier evento
+    function attachListeners(root) {
+        root.querySelectorAll(
+            '[data-baseweb="select"] input, ' +
+            '[data-baseweb="input"] input, ' +
+            '[data-baseweb="checkbox"] input, ' +
+            'button'
+        ).forEach(function(el) {
+            if (el._sl) return;
+            el._sl = true;
+            el.addEventListener('mousedown', saveScroll, true);
+            el.addEventListener('click',     function() { lockFor(800); }, true);
+            el.addEventListener('keydown',   function(e) {
+                if (e.key === 'Enter' || e.key === ' ') lockFor(800);
+            }, true);
+        });
+        // Dropdown option click
+        root.querySelectorAll('[role="option"]').forEach(function(el) {
+            if (el._sl) return;
+            el._sl = true;
+            el.addEventListener('mousedown', saveScroll, true);
+            el.addEventListener('click', function() { lockFor(800); }, true);
+        });
+    }
+
+    attachListeners(doc);
+    new MutationObserver(function() {
+        attachListeners(doc);
+    }).observe(doc.body, { childList: true, subtree: true });
+})();
+</script>
+""", height=0, scrolling=False)
 
 # --- 9. HEADER ---
 c_head1, c_head2 = st.columns([1, 5])
@@ -734,31 +858,95 @@ status_color = "#28a745"   if st.session_state.is_online else "#dc3545"
 st.markdown(f"<div style='text-align:right;font-size:0.7rem;color:{status_color};font-weight:bold;margin-top:-10px;margin-bottom:10px;'>● {status_txt}</div>", unsafe_allow_html=True)
 
 # --- 10. CARGA AUTOMÁTICA PARALELA AL INICIAR ---
-# Siempre revisamos el cache de Streamlit primero.
-# Si los DataFrames ya están cacheados (sobreviven cambios de pestaña y reruns),
-# los restauramos a session_state sin descargar nada de GitHub.
 _df_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
-_all_in_cache = all(_get_cached_df(k) is not None for k in _df_map)
-
-if _all_in_cache:
-    for k, ss_key in _df_map.items():
-        if st.session_state.get(ss_key) is None:
-            st.session_state[ss_key] = _get_cached_df(k)
-    st.session_state.data_loaded = True
 
 if not st.session_state.data_loaded:
     st.session_state.is_online = _check_online()
 
-if not st.session_state.data_loaded and st.session_state.is_online:
-    results, errors = load_all_parallel()
-    st.session_state.df_soriana  = results.get("SORIANA")
-    st.session_state.df_walmart  = results.get("WALMART")
-    st.session_state.df_chedraui = results.get("CHEDRAUI")
-    st.session_state.load_errors = errors
-    st.session_state.data_loaded = True
+    if st.session_state.is_online:
+        # Mostrar barra de progreso animada mientras _get_cached_df descarga/cachea
+        _keys = list(_df_map.keys())
 
-elif not st.session_state.data_loaded and not st.session_state.is_online:
-    st.session_state.data_loaded = True
+        st.markdown("""
+        <style>
+        .loader-wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 60px 20px; }
+        .loader-title { font-size:1.6rem; font-weight:800; color:#333; margin-bottom:8px; text-align:center; }
+        .loader-sub { font-size:0.95rem; color:#777; margin-bottom:32px; text-align:center; }
+        .retailer-badges { display:flex; gap:16px; margin-bottom:32px; flex-wrap:wrap; justify-content:center; }
+        .badge { padding:8px 20px; border-radius:20px; font-weight:700; font-size:0.85rem; color:white; opacity:0.4; transition: opacity 0.3s; }
+        .badge.done { opacity:1; }
+        .badge-sor { background:#D32F2F; }
+        .badge-wal { background:#0071DC; }
+        .badge-che { background:#FF6600; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        _placeholder  = st.empty()
+        _progress_bar = st.progress(0)
+        _status_text  = st.empty()
+
+        def _render(pct, msg, done_set, phase=""):
+            sor_cls = "done" if "SORIANA"  in done_set else ""
+            wal_cls = "done" if "WALMART"  in done_set else ""
+            che_cls = "done" if "CHEDRAUI" in done_set else ""
+            _placeholder.markdown(f"""
+            <div class="loader-wrap">
+                <div class="loader-title">⚙️ Sincronizando bases de datos</div>
+                <div class="loader-sub">{phase}</div>
+                <div class="retailer-badges">
+                    <span class="badge badge-sor {sor_cls}">{"✅" if sor_cls else "⏳"} SORIANA</span>
+                    <span class="badge badge-wal {wal_cls}">{"✅" if wal_cls else "⏳"} WALMART</span>
+                    <span class="badge badge-che {che_cls}">{"✅" if che_cls else "⏳"} CHEDRAUI</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            _progress_bar.progress(pct)
+            _status_text.markdown(f"<p style='text-align:center;color:#555;font-size:0.9rem;'>{msg} — <b>{int(pct*100)}%</b></p>", unsafe_allow_html=True)
+
+        _render(0.0, "Conectando a GitHub CDN…", set(), "📡 Descargando bases en paralelo")
+        _errors = {}
+        _done = set()
+        _n = len(_keys)
+
+        with ThreadPoolExecutor(max_workers=3) as _ex:
+            _fmap = {_ex.submit(_get_cached_df, k): k for k in _keys}
+            for _fut in as_completed(_fmap):
+                _k = _fmap[_fut]
+                try:
+                    _df = _fut.result()
+                except Exception as _e:
+                    _df = None
+                    _errors[_k] = str(_e)
+                if _df is not None:
+                    st.session_state[_df_map[_k]] = _df
+                    _done.add(_k)
+                else:
+                    if _k not in _errors:
+                        _errors[_k] = "No se pudo cargar"
+                _pct = len(_done) / _n
+                _msg = f"✅ {_k} listo" if _df is not None else f"⚠️ Error en {_k}"
+                _render(_pct, _msg, _done, "📡 Descargando bases en paralelo")
+
+        _render(1.0, "¡Carga completa!", _done, "✅ Listo")
+        time.sleep(0.5)
+        _placeholder.empty(); _progress_bar.empty(); _status_text.empty()
+
+        st.session_state.load_errors = _errors
+        st.session_state.data_loaded = True
+
+    else:
+        st.session_state.data_loaded = True
+
+else:
+    # Ya cargado — restaurar desde cache si session_state fue limpiado (ej. cambio de pestaña)
+    for k, ss_key in _df_map.items():
+        if st.session_state.get(ss_key) is None:
+            try:
+                _df = _get_cached_df(k)
+                if _df is not None:
+                    st.session_state[ss_key] = _df
+            except Exception:
+                pass
 
 if st.session_state.load_errors:
     for k, err in st.session_state.load_errors.items():
@@ -862,6 +1050,37 @@ def view_soriana(df_s):
         with b3: st.button("📋 DIAS X PROD",   on_click=tog_s_dias_prod, use_container_width=True, type="primary" if s_dias_prod else "secondary")
         with b4: st.button("🚚 PEDIDOS EN TRANSITO", on_click=tog_s_transito, use_container_width=True, type="primary" if s_transito else "secondary")
 
+        # ── Gráfica siempre visible ──────────────────────────────────────────
+        desc = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["DESCRIPCION"].fillna("").str.upper().str.replace(" ","",regex=False)
+        conditions = [
+            desc.str.contains("SABROSANO",na=False), desc.str.contains("GRANTRADICION",na=False),
+            desc.str.contains("BALSAMICO",na=False), desc.str.contains("MISAZON|MISAZÓN",na=False),
+            desc.str.contains("AVE",na=False) & ~desc.str.contains("NUTRIOLI",na=False),
+            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("PASTA|FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
+            desc.str.contains("OLI",na=False) & desc.str.contains("OLIVA|EV|AEROSOL|ADEREZO",na=False),
+            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("400ML|850ML",na=False) & ~desc.str.contains("PROTECT|DEFENSAS",na=False),
+            desc.str.contains("NUTRIOLI",na=False),
+        ]
+        conditions = [c.to_numpy(dtype=bool) for c in conditions]
+        choices = ["SABROSANO","GT","BALSAMICO","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
+        dff_cat = dff.copy(); dff_cat['Category'] = np.select(conditions, choices, default=None)
+        c_kpi, c_chart = st.columns([1,2])
+        with c_kpi:
+            total_so = dff_cat['SO_$'].sum()
+            st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+        with c_chart:
+            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+            pie_df = pie_df[pie_df['SO_$']>0]
+            if not pie_df.empty:
+                domain = ["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
+                range_ = ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
+                fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
+                _ann = _filter_badge({"No tienda": fil_nda, "Nombre": fil_nom, "Ciudad": fil_cd, "Estado": fil_edo}, RETAILER_COLORS["SORIANA"])
+                if _ann: fig.add_annotation(**_ann)
+                st.plotly_chart(fig, use_container_width=True)
+            else: st.info("Sin datos para gráfica.")
+
+        # ── Contenido de botones de acción (debajo de la gráfica) ────────────
         if st.session_state.s_transito:
             st.subheader("🚚 Pedidos en Tránsito")
             dff_transito = dff[dff["PEDIDOS"] > 0].copy()
@@ -872,26 +1091,28 @@ def view_soriana(df_s):
 
         elif st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
-            target_list = _SOR_DIAS_PROD
-            desc_clean_col = dff["DESCRIPCION"].str.upper().str.replace(r'&NBSP;',' ',regex=True).str.strip()
+            _base = df_s.copy()
+            _base["_DESC_CMP"] = _base["DESCRIPCION"].fillna("").str.upper().str.strip()
             res_rows = []
-            for item in target_list:
-                clean_item = item.upper().replace("&NBSP;","").replace(" ","")
-                mask = desc_clean_col.str.contains(clean_item, case=False, regex=False)
+            for item in _SOR_DIAS_PROD:
+                _item_cmp = item.upper().strip()
+                mask = _base["_DESC_CMP"] == _item_cmp
+                if not mask.any():
+                    mask = _base["_DESC_CMP"].str.contains(_item_cmp, case=False, regex=False, na=False)
                 if mask.any():
-                    subset = dff[mask]
-                    res_rows.append({"CODIGO": subset["CODIGO"].iloc[0], "ARTICULO": item, "DIAS INV": subset["DIAS_INV"].mean()})
+                    subset = _base[mask]
+                    res_rows.append({"CODIGO": subset["CODIGO"].iloc[0], "ARTICULO": item, "DIAS INV TENDENCIA": round(subset["DIAS_INV"].mean(), 1)})
                 else:
-                    res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV": 0})
+                    res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV TENDENCIA": 0})
             df_prod_summary = pd.DataFrame(res_rows)
-            st.dataframe(df_prod_summary.style.format({'DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
+            st.dataframe(df_prod_summary.style.format({'DIAS INV TENDENCIA':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(df_prod_summary), file_name="Soriana_Dias_Producto.xlsx", use_container_width=True)
 
         elif st.session_state.s_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             val_nut = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE DE SOYA NUTRIOLI BOT 850 ML")
             val_sab = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE COMESTIBLE SABROSANO 850 ML")
-            mask_pastas = dff["DESC_NORM"].str.contains("PASTA", na=False) 
+            mask_pastas = dff["DESC_NORM"].str.contains("PASTA", na=False)
             val_pas = dff.loc[mask_pastas,"DIAS_INV"].mean() if mask_pastas.any() else 0
             k1,k2,k3 = st.columns(3)
             k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
@@ -903,34 +1124,8 @@ def view_soriana(df_s):
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Soriana_Reporte_Dias.xlsx", use_container_width=True)
 
         else:
-            desc = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["DESCRIPCION"].fillna("").str.upper().str.replace(" ","",regex=False)
-            conditions = [
-                desc.str.contains("SABROSANO",na=False), desc.str.contains("GRANTRADICION",na=False),
-                desc.str.contains("BALSAMICO",na=False), desc.str.contains("MISAZON|MISAZÓN",na=False),
-                desc.str.contains("AVE",na=False) & ~desc.str.contains("NUTRIOLI",na=False),
-                desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("PASTA|FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
-                desc.str.contains("OLI",na=False) & desc.str.contains("OLIVA|EV|AEROSOL|ADEREZO",na=False),
-                desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("400ML|850ML",na=False) & ~desc.str.contains("PROTECT|DEFENSAS",na=False),
-                desc.str.contains("NUTRIOLI",na=False),
-            ]
-            conditions = [c.to_numpy(dtype=bool) for c in conditions]
-            choices = ["SABROSANO","GT","BALSAMICO","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
-            dff = dff.copy(); dff['Category'] = np.select(conditions, choices, default=None)
-            c_kpi, c_chart = st.columns([1,2])
-            with c_kpi:
-                total_so = dff['SO_$'].sum()
-                st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
-            with c_chart:
-                pie_df = dff.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-                pie_df = pie_df[pie_df['SO_$']>0]
-                if not pie_df.empty:
-                    domain = ["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
-                    range_ = ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
-                    fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
-                    st.plotly_chart(fig, use_container_width=True)
-                else: st.info("Sin datos para gráfica.")
-            if st.session_state.s_rojo: dff=dff[dff['SIN_VTA']]; st.caption("📋 Vista: Sin Venta")
-            disp = dff[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
+            if st.session_state.s_rojo: dff_cat=dff_cat[dff_cat['SIN_VTA']]; st.caption("📋 Vista: Sin Venta")
+            disp = dff_cat[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
             disp.columns=['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM',ascending=False)
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
@@ -1004,9 +1199,6 @@ def view_walmart(df_w):
         with b3: st.button("📅 DIAS INV",     on_click=tog_w, args=('w_dias_inv',),  use_container_width=True, type="primary" if w_dias_inv  else "secondary")
         with b4: st.button("📋 DIAS X PROD",  on_click=tog_w, args=('w_dias_prod',), use_container_width=True, type="primary" if w_dias_prod else "secondary")
 
-        if st.session_state.w_neg: dff=dff[dff["EXISTENCIA"]<0]; st.warning("VISTA: NEGATIVOS")
-        if st.session_state.w_4w:  dff=dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
-
         borges_list = ["BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES ACEITE OLIVA EXTRA SUAVE","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE SOJA JENGIBRE","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA AL  ROMERO FRESCO","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES VINAGRE BALSAMICO 250ML","VINAGRE DE JEREZ 250 ML","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO FRAMBUESA","VINAGRE DE VINO AL  AJO 250 ML","BORGES VINAGRE VINO BLANCO","VINAGRE DE MANZANA ECOLOGICO","BORGES VINAGRE DE VINOTINTO","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","BORGES ACEITE OLIVA 100 PURO CON AJO"]
         borges_pat = "|".join([x.replace(" ","").upper() for x in borges_list])
         desc_w = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["DESCRIPCION"].fillna("").str.upper().str.replace(" ","",regex=False).str.replace("&NBSP;","",regex=False)
@@ -1022,14 +1214,47 @@ def view_walmart(df_w):
         ]
         conditions_w = [c.to_numpy(dtype=bool) for c in conditions_w]
         choices_w = ["BORGES","NUTRIOLI","SABROSANO","GT","BALSAMICO","OLIVAS","PASTAS","REST NUTRIOLI"]
-        dff = dff.copy(); dff['Category'] = np.select(conditions_w, choices_w, default=None)
+        dff_cat = dff.copy(); dff_cat['Category'] = np.select(conditions_w, choices_w, default=None)
 
-        if st.session_state.w_dias_prod:
+        # ── Gráfica siempre visible ──────────────────────────────────────────
+        c_kpi,c_chart = st.columns([1,2])
+        total_so = dff_cat['SO_$'].sum()
+        with c_kpi:
+            st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+        with c_chart:
+            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+            pie_df = pie_df[pie_df['SO_$']>0]
+            if not pie_df.empty:
+                domain=["SABROSANO","GT","OLIVAS","BALSAMICO","PASTAS","REST NUTRIOLI","NUTRIOLI","BORGES"]
+                range_=["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#FF0000"]
+                fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
+                _ann = _filter_badge({"Tienda": sel_store, "Estado": sel_state, "Formato": sel_fmt}, RETAILER_COLORS["WALMART"])
+                if _ann: fig.add_annotation(**_ann)
+                st.plotly_chart(fig, use_container_width=True)
+            else: st.info("Sin datos para gráfica.")
+
+        # ── Contenido de botones de acción (debajo de la gráfica) ────────────
+        if st.session_state.w_neg:
+            dff_neg = dff[dff["EXISTENCIA"]<0]
+            st.warning("VISTA: NEGATIVOS")
+            disp=dff_neg[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
+            disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
+            st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_Negativos.xlsx", use_container_width=True)
+
+        elif st.session_state.w_4w:
+            dff_4w = dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]
+            st.warning("VISTA: SIN VENTA 4 SEMANAS")
+            disp=dff_4w[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
+            disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
+            st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
+            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_SinVenta4Sem.xlsx", use_container_width=True)
+
+        elif st.session_state.w_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
-            target_list = _WAL_DIAS_PROD
             desc_nospace = dff_kpi["DESCRIPCION"].str.upper().str.replace(r'&NBSP;','',regex=True).str.replace(" ","",regex=False)
             res_rows = []
-            for item in target_list:
+            for item in _WAL_DIAS_PROD:
                 clean_item = item.upper().replace("&NBSP;","").replace(" ","")
                 mask = desc_nospace.str.contains(clean_item, case=False, regex=False)
                 if mask.any():
@@ -1058,20 +1283,7 @@ def view_walmart(df_w):
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_w_dias), file_name="Walmart_Reporte_Dias.xlsx", use_container_width=True)
 
         else:
-            c_kpi,c_chart = st.columns([1,2])
-            total_so = dff['SO_$'].sum()
-            with c_kpi:
-                st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
-            with c_chart:
-                pie_df = dff.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-                pie_df = pie_df[pie_df['SO_$']>0]
-                if not pie_df.empty:
-                    domain=["SABROSANO","GT","OLIVAS","BALSAMICO","PASTAS","REST NUTRIOLI","NUTRIOLI","BORGES"]
-                    range_=["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#FF0000"]
-                    fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
-                    st.plotly_chart(fig, use_container_width=True)
-                else: st.info("Sin datos para gráfica.")
-            disp=dff[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
+            disp=dff_cat[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_General.xlsx", use_container_width=True)
@@ -1138,6 +1350,40 @@ def view_chedraui(df_c):
         with b1: st.button("📉 NEGATIVOS", on_click=tog_c, args=('c_neg_zero',), use_container_width=True, type="primary" if c_neg_zero else "secondary")
         with b2: st.button("📅 DIAS INV",  on_click=tog_c, args=('c_dias_inv',), use_container_width=True, type="primary" if c_dias_inv else "secondary")
 
+        # ── Gráfica siempre visible ──────────────────────────────────────────
+        desc_c = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["ARTICULO"].fillna("").str.upper().str.replace(" ","",regex=False)
+        conditions_c = [
+            desc_c.str.contains("BALSAMICO",na=False),
+            desc_c.str.contains("SABROSANO",na=False),
+            desc_c.str.contains("GRANTRADICION",na=False),
+            desc_c.str.contains("MISAZON|MISAZÓN",na=False),
+            desc_c.str.contains("AVE",na=False)&desc_c.str.contains("SOYA-CANOLA|AEROSOL",na=False),
+            desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
+            desc_c.str.contains("OLI",na=False)&desc_c.str.contains("OLIVA|EV|AEROSOL",na=False),
+            desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("400ML|850ML",na=False)&~desc_c.str.contains("PROTECT|DEFENSAS",na=False),
+            desc_c.str.contains("NUTRIOLI",na=False)
+        ]
+        conditions_c = [c.to_numpy(dtype=bool) for c in conditions_c]
+        choices_c = ["BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
+        dff_cat = dff.copy(); dff_cat['Category'] = np.select(conditions_c, choices_c, default=None)
+
+        c_kpi,c_chart = st.columns([1,2])
+        with c_kpi:
+            total_so = dff_cat['SELL_OUT'].sum()
+            st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
+        with c_chart:
+            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
+            pie_df = pie_df[pie_df['SELL_OUT']>0]
+            if not pie_df.empty:
+                domain=["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
+                range_=["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
+                fig = _make_pie(pie_df.to_json(), domain, range_, 'SELL_OUT')
+                _ann = _filter_badge({"No tienda": fil_no, "Tienda": fil_ti, "Estado": fil_ed}, RETAILER_COLORS["CHEDRAUI"])
+                if _ann: fig.add_annotation(**_ann)
+                st.plotly_chart(fig, use_container_width=True)
+            else: st.info("Sin datos para gráfica.")
+
+        # ── Contenido de botones de acción (debajo de la gráfica) ────────────
         if st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             val_nut = get_kpi_mean(dff_base,"ARTICULO","DIAS_INV","Nutrioli Bot 850")
@@ -1161,37 +1407,8 @@ def view_chedraui(df_c):
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Chedraui_Negativos.xlsx", use_container_width=True)
 
         else:
-            desc_c = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["ARTICULO"].fillna("").str.upper().str.replace(" ","",regex=False)
-            conditions_c = [
-                desc_c.str.contains("BALSAMICO",na=False), 
-                desc_c.str.contains("SABROSANO",na=False), 
-                desc_c.str.contains("GRANTRADICION",na=False), 
-                desc_c.str.contains("MISAZON|MISAZÓN",na=False), 
-                desc_c.str.contains("AVE",na=False)&desc_c.str.contains("SOYA-CANOLA|AEROSOL",na=False), 
-                desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False), 
-                desc_c.str.contains("OLI",na=False)&desc_c.str.contains("OLIVA|EV|AEROSOL",na=False), 
-                desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("400ML|850ML",na=False)&~desc_c.str.contains("PROTECT|DEFENSAS",na=False), 
-                desc_c.str.contains("NUTRIOLI",na=False)
-            ]
-            conditions_c = [c.to_numpy(dtype=bool) for c in conditions_c]
-            choices_c = ["BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
-            dff=dff.copy(); dff['Category']=np.select(conditions_c,choices_c,default=None)
-            
-            c_kpi,c_chart = st.columns([1,2])
-            with c_kpi:
-                total_so = dff['SELL_OUT'].sum()
-                st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
-            with c_chart:
-                pie_df = dff.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
-                pie_df = pie_df[pie_df['SELL_OUT']>0]
-                if not pie_df.empty:
-                    domain=["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
-                    range_=["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
-                    fig = _make_pie(pie_df.to_json(), domain, range_, 'SELL_OUT')
-                    st.plotly_chart(fig, use_container_width=True)
-                else: st.info("Sin datos para gráfica.")
             st.caption("📋 Vista: Completa")
-            disp=dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
+            disp=dff_cat[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
             disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_General.xlsx", use_container_width=True)
