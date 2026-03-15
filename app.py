@@ -149,6 +149,103 @@ def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
     )
     return fig
 
+@st.cache_data(show_spinner=False, ttl=14400)
+def _categorize_df(df_json: str, retailer: str) -> str:
+    """Clasifica filas en categorías según retailer. Cacheado para no recalcular.
+    Recibe y retorna JSON para compatibilidad con cache_data."""
+    df = pd.read_json(df_json)
+
+    def _safe_str(series):
+        """Garantiza que la serie sea string antes de usar .str"""
+        return series.fillna("").astype(str).str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
+
+    if retailer == "SORIANA":
+        desc = df["DESC_NORM"].astype(str) if "DESC_NORM" in df.columns else _safe_str(df["DESCRIPCION"])
+        conditions = [
+            desc.str.contains("SABROSANO",na=False), desc.str.contains("GRANTRADICION",na=False),
+            desc.str.contains("BALSAMICO",na=False), desc.str.contains("MISAZON|MISAZÓN",na=False),
+            desc.str.contains("AVE",na=False) & ~desc.str.contains("NUTRIOLI",na=False),
+            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("PASTA|FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
+            desc.str.contains("OLI",na=False) & desc.str.contains("OLIVA|EV|AEROSOL|ADEREZO",na=False),
+            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("400ML|850ML",na=False) & ~desc.str.contains("PROTECT|DEFENSAS",na=False),
+            desc.str.contains("NUTRIOLI",na=False),
+        ]
+        choices = ["SABROSANO","GT","BALSAMICO","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
+    elif retailer == "WALMART":
+        borges_pat = "|".join([x.replace(" ","").upper() for x in ["BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES ACEITE OLIVA EXTRA SUAVE","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE SOJA JENGIBRE","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA AL  ROMERO FRESCO","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES VINAGRE BALSAMICO 250ML","VINAGRE DE JEREZ 250 ML","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO FRAMBUESA","VINAGRE DE VINO AL  AJO 250 ML","BORGES VINAGRE VINO BLANCO","VINAGRE DE MANZANA ECOLOGICO","BORGES VINAGRE DE VINOTINTO","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","BORGES ACEITE OLIVA 100 PURO CON AJO"]])
+        desc = df["DESC_NORM"].astype(str) if "DESC_NORM" in df.columns else _safe_str(df["DESCRIPCION"])
+        conditions = [
+            desc.str.contains(borges_pat, regex=True, na=False),
+            desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("946",na=False),
+            desc.str.contains("SABROSANO",na=False),
+            desc.str.contains("GRANTRADICION",na=False),
+            desc.str.contains("BALSAMICO",na=False),
+            (desc.str.contains("OLISPRAY|OLICOCINA|OLIDENUTEV|ACEITEOLIDEOLIVA|OLIDENUT",na=False))&~desc.str.contains("BALSAMICO",na=False),
+            desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("SPAGUETTI|FIDEO|CODO|PASTA",na=False),
+            desc.str.contains("NUTRIOLI",na=False),
+        ]
+        choices = ["BORGES","NUTRIOLI","SABROSANO","GT","BALSAMICO","OLIVAS","PASTAS","REST NUTRIOLI"]
+    else:  # CHEDRAUI
+        desc = df["DESC_NORM"].astype(str) if "DESC_NORM" in df.columns else _safe_str(df["ARTICULO"])
+        conditions = [
+            desc.str.contains("BALSAMICO",na=False),
+            desc.str.contains("SABROSANO",na=False),
+            desc.str.contains("GRANTRADICION",na=False),
+            desc.str.contains("MISAZON|MISAZÓN",na=False),
+            desc.str.contains("AVE",na=False)&desc.str.contains("SOYA-CANOLA|AEROSOL",na=False),
+            desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
+            desc.str.contains("OLI",na=False)&desc.str.contains("OLIVA|EV|AEROSOL",na=False),
+            desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("400ML|850ML",na=False)&~desc.str.contains("PROTECT|DEFENSAS",na=False),
+            desc.str.contains("NUTRIOLI",na=False),
+        ]
+        choices = ["BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
+    conditions = [c.to_numpy(dtype=bool) for c in conditions]
+    df = df.copy()
+    df['Category'] = np.select(conditions, choices, default=None)
+    return df.to_json()
+
+@st.cache_data(show_spinner=False, ttl=14400)
+def categorize_full_df(df_json: str, retailer: str) -> str:
+    """Categoriza el dataframe COMPLETO una sola vez al cargar la base.
+    Los filtros luego operan sobre esta base ya categorizada — 3-5x más rápido."""
+    return _categorize_df(df_json, retailer)
+
+@st.cache_data(show_spinner=False, ttl=14400)
+def build_pie_cached(pie_df_json: str, retailer: str):
+    """Construye la figura Plotly cacheada a partir del groupby ya calculado.
+    La clave de cache incluye el JSON del pie_df, por lo que se invalida solo
+    cuando los datos agrupados cambian — no en cada rerun."""
+    COLORS = {
+        "SORIANA":  (["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"],
+                     ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"],
+                     "SO_$"),
+        "WALMART":  (["SABROSANO","GT","OLIVAS","BALSAMICO","PASTAS","REST NUTRIOLI","NUTRIOLI","BORGES"],
+                     ["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#FF0000"],
+                     "SO_$"),
+        "CHEDRAUI": (["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"],
+                     ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"],
+                     "SELL_OUT"),
+    }
+    domain, range_, val_col = COLORS[retailer]
+    return _make_pie(pie_df_json, domain, range_, val_col)
+
+@st.cache_data(show_spinner=False, ttl=14400)
+def precompute_pie_base(df_cat_json: str, retailer: str) -> str:
+    """Precalcula el groupby Category sobre la base completa ya categorizada.
+    Retorna el pie_df como JSON listo para pasar a build_pie_cached.
+    Se ejecuta una sola vez al cargar — los filtros reutilizan este JSON
+    solo cuando no hay filtros activos (primer render instantáneo)."""
+    df = pd.read_json(df_cat_json)
+    if "Category" not in df.columns:
+        return None
+    val_col = "SELL_OUT" if retailer == "CHEDRAUI" else "SO_$"
+    if val_col not in df.columns:
+        return None
+    pie_df = df.dropna(subset=["Category"]).groupby("Category")[val_col].sum().reset_index()
+    pie_df = pie_df[pie_df[val_col] > 0]
+    return pie_df.to_json() if not pie_df.empty else None
+
+
 # --- SESSION HTTP GLOBAL ---
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -398,6 +495,9 @@ def load_che(path):
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
         df = _str_cols(df, ["ESTADO", "COORDINADOR", "EJECUTIVO", "PROMOTOR", "CATEGORIA", "NO_TIENDA", "TIENDA", "ARTICULO"])
+        # Normalizar nombre de tienda: eliminar prefijos numéricos como "24070 CHEDRAUI..."
+        # Así "24070 CHEDRAUI TLAJOMULCO 11-11" y "CHEDRAUI TLAJOMULCO 11-11" quedan iguales
+        df["TIENDA"] = df["TIENDA"].str.strip().str.replace(r'^\d+\s+', '', regex=True).str.strip()
         df["DESC_NORM"] = df["ARTICULO"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
     except Exception as e:
@@ -745,20 +845,43 @@ div[data-testid="stHorizontalBlock"] button {{
     padding: 0 6px !important;
     line-height: 1 !important;
 }}
-/* Altura fija en multiselects para evitar saltos de layout al seleccionar */
+/* ── Multiselect: altura 100% fija, sin saltos de layout ── */
 div[data-baseweb="select"] {{
+    height: 42px !important;
     min-height: 42px !important;
+    max-height: 42px !important;
+    overflow: hidden !important;
 }}
-div[data-baseweb="select"] > div:first-child {{
+div[data-baseweb="select"] > div {{
+    height: 42px !important;
     min-height: 42px !important;
-    flex-wrap: wrap !important;
+    max-height: 42px !important;
+    overflow: hidden !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+}}
+div[data-baseweb="select"] > div > div {{
+    overflow: hidden !important;
+    flex-wrap: nowrap !important;
+    max-height: 42px !important;
+}}
+div[data-baseweb="tag"] {{
+    max-width: 90px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
 }}
 div[data-baseweb="select"] span {{
     white-space: nowrap !important;
 }}
-/* Evitar que el expander cambie altura al agregar/quitar chips */
-div[data-testid="stExpander"] > div[data-testid="stExpanderDetails"] {{
-    overflow: visible !important;
+/* Evitar que las columnas se desplacen al cambiar altura de sus hijos */
+[data-testid="stHorizontalBlock"] {{
+    align-items: flex-start !important;
+}}
+/* Evitar reposicionamiento de scroll al re-render */
+[data-testid="stVerticalBlock"] {{
+    scroll-margin-top: 0px !important;
 }}
 @media (max-width: 768px) {{
     .block-container {{ padding-left: 0.5rem !important; padding-right: 0.5rem !important; }}
@@ -779,55 +902,62 @@ st.components.v1.html("""
 (function() {
     var doc = window.parent.document;
     var win = window.parent;
-    var _savedY = null;
-    var _locked = false;
+    var _savedY = 0;
+    var _obs = null;
 
     function saveScroll() {
         _savedY = win.scrollY;
     }
 
-    function restoreScroll() {
-        if (_savedY !== null) {
-            win.scrollTo({ top: _savedY, behavior: 'instant' });
-        }
-    }
-
-    function lockFor(ms) {
-        if (_locked) return;
-        _locked = true;
+    function startLock(ms) {
+        // Cancelar observer anterior si existe
+        if (_obs) { _obs.disconnect(); _obs = null; }
         saveScroll();
-        var obs = new MutationObserver(function() {
+        _obs = new MutationObserver(function() {
             win.scrollTo({ top: _savedY, behavior: 'instant' });
         });
-        obs.observe(doc.body, { childList: true, subtree: true, attributes: true });
+        _obs.observe(doc.body, { childList: true, subtree: true, attributes: true, characterData: true });
         setTimeout(function() {
-            obs.disconnect();
-            _locked = false;
-        }, ms || 800);
+            if (_obs) { _obs.disconnect(); _obs = null; }
+        }, ms || 1200);
     }
 
-    // Capturar scroll antes de que Streamlit reactive en cualquier evento
+    // ── Interceptar el WebSocket de Streamlit para capturar reruns ──────────
+    // Cuando Streamlit envía un mensaje al servidor (ej. callback on_change),
+    // guardamos el scroll ANTES de que llegue la respuesta y re-renderice.
+    try {
+        var _origSend = WebSocket.prototype.send;
+        WebSocket.prototype.send = function(data) {
+            saveScroll();
+            startLock(300);
+            return _origSend.apply(this, arguments);
+        };
+    } catch(e) {}
+
+    // ── También capturar interacciones directas del DOM ───────────────────
     function attachListeners(root) {
-        root.querySelectorAll(
-            '[data-baseweb="select"] input, ' +
-            '[data-baseweb="input"] input, ' +
-            '[data-baseweb="checkbox"] input, ' +
-            'button'
-        ).forEach(function(el) {
-            if (el._sl) return;
-            el._sl = true;
+        // Inputs de multiselect (typing para buscar)
+        root.querySelectorAll('[data-baseweb="select"] input').forEach(function(el) {
+            if (el._sl) return; el._sl = true;
             el.addEventListener('mousedown', saveScroll, true);
-            el.addEventListener('click',     function() { lockFor(800); }, true);
-            el.addEventListener('keydown',   function(e) {
-                if (e.key === 'Enter' || e.key === ' ') lockFor(800);
-            }, true);
+            el.addEventListener('focus', saveScroll, true);
         });
-        // Dropdown option click
+        // Opciones del dropdown (click en item de lista)
         root.querySelectorAll('[role="option"]').forEach(function(el) {
-            if (el._sl) return;
-            el._sl = true;
+            if (el._sl) return; el._sl = true;
+            el.addEventListener('mousedown', function() { saveScroll(); startLock(300); }, true);
+            el.addEventListener('click',     function() { startLock(300); }, true);
+        });
+        // Tags (chips) — clic en X para quitar filtro
+        root.querySelectorAll('[data-baseweb="tag"] [role="button"]').forEach(function(el) {
+            if (el._sl) return; el._sl = true;
+            el.addEventListener('mousedown', function() { saveScroll(); startLock(300); }, true);
+        });
+        // Botones generales
+        root.querySelectorAll('button').forEach(function(el) {
+            if (el._sl) return; el._sl = true;
             el.addEventListener('mousedown', saveScroll, true);
-            el.addEventListener('click', function() { lockFor(800); }, true);
+            el.addEventListener('click', function() { startLock(300); }, true);
         });
     }
 
@@ -937,6 +1067,25 @@ if not st.session_state.data_loaded:
     else:
         st.session_state.data_loaded = True
 
+    # Pre-categorizar bases y pre-calcular groupby base (una sola vez, TTL 4h)
+    try:
+        for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
+            _df_pre = st.session_state.get(_ss)
+            if _df_pre is None:
+                continue
+            _cat_key = f"cat_{_rk.lower()}"
+            _pie_key = f"pie_base_{_rk.lower()}"
+            # Categorizar si no está en session_state
+            if _cat_key not in st.session_state:
+                st.session_state[_cat_key] = pd.read_json(categorize_full_df(_df_pre.to_json(), _rk))
+            # Pre-calcular groupby base si no está en session_state
+            if _pie_key not in st.session_state:
+                _pie_json = precompute_pie_base(st.session_state[_cat_key].to_json(), _rk)
+                if _pie_json:
+                    st.session_state[_pie_key] = _pie_json
+    except Exception:
+        pass
+
 else:
     # Ya cargado — restaurar desde cache si session_state fue limpiado (ej. cambio de pestaña)
     for k, ss_key in _df_map.items():
@@ -999,6 +1148,7 @@ def _us(series) -> list:
 
 # --- 13. VISTAS ---
 def view_soriana(df_s):
+    df_s_cat = pd.read_json(categorize_full_df(df_s.to_json(), "SORIANA"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
 
     def tog_s_rojo():
@@ -1026,23 +1176,93 @@ def view_soriana(df_s):
         st.session_state[f's_rank_{mode.lower()}']=True
 
     if df_s is not None:
-        with st.expander("🔍 Filtros Avanzados", expanded=True):
+        # ── Inicializar claves de session_state para los filtros en cascada ──
+        for _k in ["s_fil_nda","s_fil_edo","s_fil_nom","s_fil_cd","s_fil_fmt"]:
+            if _k not in st.session_state:
+                st.session_state[_k] = []
+
+        # ── Callback: cuando cambia No Tienda, sobreescribe los dependientes ─
+        def _on_nda_change():
+            nda = st.session_state.get("s_fil_nda", [])
+            if nda:
+                _t = df_s[df_s["NO_TIENDA"].isin(nda)]
+                st.session_state["s_fil_nom"] = sorted(_t["TIENDA"].dropna().unique())
+                st.session_state["s_fil_edo"] = sorted(_t["ESTADO"].dropna().unique())
+                st.session_state["s_fil_cd"]  = sorted(_t["CIUDAD"].dropna().unique())
+                st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
+            else:
+                st.session_state["s_fil_nom"] = []
+                st.session_state["s_fil_edo"] = []
+                st.session_state["s_fil_cd"]  = []
+                st.session_state["s_fil_fmt"] = []
+
+        # ── Callback: cuando cambia Estado, limita opciones de los demás ─────
+        def _on_edo_change():
+            if st.session_state.get("s_fil_nda"):
+                return  # No Tienda tiene prioridad
+            edo = st.session_state.get("s_fil_edo", [])
+            # Limpiar campos dependientes para que no queden valores fuera de rango
+            st.session_state["s_fil_nom"] = []
+            st.session_state["s_fil_cd"]  = []
+            st.session_state["s_fil_fmt"] = []
+
+        # ── Callback: cuando cambia Nombre, autocompleta No Tienda ───────────
+        def _on_nom_change():
+            if st.session_state.get("s_fil_nda"):
+                return  # No Tienda ya está fijo
+            nom = st.session_state.get("s_fil_nom", [])
+            if nom:
+                _t = df_s[df_s["TIENDA"].isin(nom)]
+                st.session_state["s_fil_nda"] = list(_t["NO_TIENDA"].dropna().unique())
+
+        with st.container():
+            st.markdown("#### 🔍 Filtros Avanzados")
             c1, c2 = st.columns(2)
+
+            # Calcular opciones dinámicas antes de renderizar
+            _edo_sel = st.session_state.get("s_fil_edo", [])
+            _nda_sel = st.session_state.get("s_fil_nda", [])
+            if _nda_sel:
+                _df_scope = df_s[df_s["NO_TIENDA"].isin(_nda_sel)]
+            elif _edo_sel:
+                _df_scope = df_s[df_s["ESTADO"].isin(_edo_sel)]
+            else:
+                _df_scope = df_s
+            _opts_nom = sorted(_df_scope["TIENDA"].dropna().unique())
+            _opts_cd  = sorted(_df_scope["CIUDAD"].dropna().unique())
+            _opts_fmt = sorted(_df_scope["FORMATO"].dropna().unique())
+
             with c1:
                 opts_res = ["Todos"] + _us(df_s["RESURTIMIENTO"])
                 def_res  = ["1.0"] if "1.0" in opts_res else (["1"] if "1" in opts_res else ["Todos"])
-                fil_res  = st.multiselect("Resurtible", opts_res, default=def_res)
-                fil_nda  = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]))
-                fil_nom  = st.multiselect("Nombre",    _us(df_s["TIENDA"]))
+                fil_res = st.multiselect("Resurtible", opts_res, default=def_res)
+                fil_nda = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]),
+                                         key="s_fil_nda", on_change=_on_nda_change)
+                fil_nom = st.multiselect("Nombre", _opts_nom,
+                                         key="s_fil_nom", on_change=_on_nom_change)
             with c2:
-                fil_cd  = st.multiselect("Ciudad",   _us(df_s["CIUDAD"]))
-                fil_edo = st.multiselect("Estado",   _us(df_s["ESTADO"]))
-                fil_fmt = st.multiselect("Formato",  _us(df_s["FORMATO"]))
+                fil_edo = st.multiselect("Estado", _us(df_s["ESTADO"]),
+                                         key="s_fil_edo", on_change=_on_edo_change)
+                fil_cd  = st.multiselect("Ciudad",  _opts_cd,  key="s_fil_cd")
+                fil_fmt = st.multiselect("Formato", _opts_fmt, key="s_fil_fmt")
                 fil_art = st.multiselect("Artículo", _us(df_s["DESCRIPCION"]))
 
         dff = apply_filters(df_s,
             ["RESURTIMIENTO","NO_TIENDA","TIENDA","CIUDAD","ESTADO","FORMATO","DESCRIPCION"],
             [fil_res if "Todos" not in fil_res else None, fil_nda, fil_nom, fil_cd, fil_edo, fil_fmt, fil_art])
+
+        # dff_graph con fallback progresivo — la gráfica SIEMPRE muestra datos
+        # Nivel 1: filtros geográficos completos
+        dff_graph = apply_filters(df_s, ["NO_TIENDA","TIENDA","CIUDAD","ESTADO"], [fil_nda, fil_nom, fil_cd, fil_edo])
+        # Nivel 2: si queda vacío por combinación contradictoria, quitar Ciudad/Formato
+        if dff_graph.empty and (fil_nda or fil_nom):
+            dff_graph = apply_filters(df_s, ["NO_TIENDA","TIENDA"], [fil_nda, fil_nom])
+        # Nivel 3: si sigue vacío, usar solo Estado
+        if dff_graph.empty and fil_edo:
+            dff_graph = apply_filters(df_s, ["ESTADO"], [fil_edo])
+        # Nivel 4: sin filtros (nunca debe llegar aquí, pero garantía total)
+        if dff_graph.empty:
+            dff_graph = df_s
 
         b1, b2, b3, b4 = st.columns(4, gap="small")
         with b1: st.button("🔴 INV SIN VENTA", on_click=tog_s_rojo,      use_container_width=True, type="primary" if s_rojo      else "secondary")
@@ -1050,35 +1270,36 @@ def view_soriana(df_s):
         with b3: st.button("📋 DIAS X PROD",   on_click=tog_s_dias_prod, use_container_width=True, type="primary" if s_dias_prod else "secondary")
         with b4: st.button("🚚 PEDIDOS EN TRANSITO", on_click=tog_s_transito, use_container_width=True, type="primary" if s_transito else "secondary")
 
-        # ── Gráfica siempre visible ──────────────────────────────────────────
-        desc = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["DESCRIPCION"].fillna("").str.upper().str.replace(" ","",regex=False)
-        conditions = [
-            desc.str.contains("SABROSANO",na=False), desc.str.contains("GRANTRADICION",na=False),
-            desc.str.contains("BALSAMICO",na=False), desc.str.contains("MISAZON|MISAZÓN",na=False),
-            desc.str.contains("AVE",na=False) & ~desc.str.contains("NUTRIOLI",na=False),
-            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("PASTA|FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
-            desc.str.contains("OLI",na=False) & desc.str.contains("OLIVA|EV|AEROSOL|ADEREZO",na=False),
-            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("400ML|850ML",na=False) & ~desc.str.contains("PROTECT|DEFENSAS",na=False),
-            desc.str.contains("NUTRIOLI",na=False),
-        ]
-        conditions = [c.to_numpy(dtype=bool) for c in conditions]
-        choices = ["SABROSANO","GT","BALSAMICO","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
-        dff_cat = dff.copy(); dff_cat['Category'] = np.select(conditions, choices, default=None)
+        # ── Gráfica: merge con base categorizada — sin recalcular en cada filtro ──
+        dff_cat = dff_graph.merge(df_s_cat[["Category"]], left_index=True, right_index=True, how="left")
         c_kpi, c_chart = st.columns([1,2])
         with c_kpi:
             total_so = dff_cat['SO_$'].sum()
             st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out Semanal</div><div class='kpi-value' style='color:#D32F2F;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
         with c_chart:
-            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-            pie_df = pie_df[pie_df['SO_$']>0]
-            if not pie_df.empty:
-                domain = ["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
-                range_ = ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
-                fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
+            _hay_filtros_s = any([fil_nda, fil_nom, fil_cd, fil_edo])
+            if _hay_filtros_s:
+                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+                pie_df = pie_df[pie_df['SO_$']>0]
+                # Fallback: si combinación vacía, usar base completa categorizada
+                if pie_df.empty:
+                    _pie_json_s = st.session_state.get("pie_base_soriana")
+                else:
+                    _pie_json_s = pie_df.to_json()
+            else:
+                _pie_json_s = st.session_state.get("pie_base_soriana")
+            # Garantía final: si aún no hay datos usar df_s_cat completo
+            if not _pie_json_s:
+                _fb = df_s_cat.dropna(subset=["Category"]).groupby("Category")["SO_$"].sum().reset_index()
+                _fb = _fb[_fb["SO_$"]>0]
+                _pie_json_s = _fb.to_json() if not _fb.empty else None
+            if _pie_json_s:
+                fig = build_pie_cached(_pie_json_s, "SORIANA")
                 _ann = _filter_badge({"No tienda": fil_nda, "Nombre": fil_nom, "Ciudad": fil_cd, "Estado": fil_edo}, RETAILER_COLORS["SORIANA"])
                 if _ann: fig.add_annotation(**_ann)
                 st.plotly_chart(fig, use_container_width=True)
-            else: st.info("Sin datos para gráfica.")
+            else:
+                st.info("Sin datos para gráfica.")
 
         # ── Contenido de botones de acción (debajo de la gráfica) ────────────
         if st.session_state.s_transito:
@@ -1162,6 +1383,7 @@ def view_soriana(df_s):
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
 def view_walmart(df_w):
+    df_w_cat = pd.read_json(categorize_full_df(df_w.to_json(), "WALMART"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
 
     def tog_w(target):
@@ -1176,16 +1398,65 @@ def view_walmart(df_w):
 
     if df_w is not None:
         df_w = df_w[~df_w["FORMATO"].isin(['BAE','MB'])]
-        with st.expander("🔍 Filtros Avanzados", expanded=True):
+
+        # ── Inicializar claves de session_state ──────────────────────────────
+        for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
+            if _k not in st.session_state:
+                st.session_state[_k] = []
+
+        # ── Callback: Tienda → autocompleta Estado y Formato ─────────────────
+        def _on_store_change():
+            store = st.session_state.get("w_fil_store", [])
+            if store:
+                _t = df_w[df_w["TIENDA"].isin(store)]
+                st.session_state["w_fil_state"] = sorted(_t["ESTADO"].dropna().unique())
+                st.session_state["w_fil_fmt"]   = sorted(_t["FORMATO"].dropna().unique())
+            else:
+                st.session_state["w_fil_state"] = []
+                st.session_state["w_fil_fmt"]   = []
+
+        # ── Callback: Estado → limita Formato y limpia Tienda si incompatible ─
+        def _on_state_change():
+            if st.session_state.get("w_fil_store"):
+                return  # Tienda tiene prioridad
+            st.session_state["w_fil_fmt"]   = []
+            st.session_state["w_fil_store"] = []
+
+        # ── Callback: Formato → limpia Tienda si incompatible ────────────────
+        def _on_fmt_change():
+            if st.session_state.get("w_fil_store"):
+                return  # Tienda tiene prioridad
+            st.session_state["w_fil_store"] = []
+
+        with st.container():
+            st.markdown("#### 🔍 Filtros Avanzados")
             c1,c2,c3 = st.columns(3)
+
+            # Calcular opciones dinámicas antes de renderizar
+            _store_sel = st.session_state.get("w_fil_store", [])
+            _state_sel = st.session_state.get("w_fil_state", [])
+            _fmt_sel   = st.session_state.get("w_fil_fmt",   [])
+
+            if _store_sel:
+                _df_w_scope = df_w[df_w["TIENDA"].isin(_store_sel)]
+            elif _state_sel:
+                _df_w_scope = df_w[df_w["ESTADO"].isin(_state_sel)]
+            else:
+                _df_w_scope = df_w
+            _fmt_opts_w    = sorted(_df_w_scope["FORMATO"].dropna().unique())
+            _df_w_fmt_scope = _df_w_scope[_df_w_scope["FORMATO"].isin(_fmt_sel)] if _fmt_sel else _df_w_scope
+            _tienda_opts_w  = sorted(_df_w_fmt_scope["TIENDA"].dropna().unique())
+
             with c1:
                 marca_opts = sorted([m for m in df_w["MARCA"].dropna().unique() if m.strip().upper() not in ["NUTRIOLI + PASTA","NUTRIOLI  PASTA","NUTRIOLI PASTA"]])
                 sel_marca = st.multiselect("Marca", marca_opts)
-                sel_state = st.multiselect("Estado", _us(df_w["ESTADO"]))
+                sel_state = st.multiselect("Estado", _us(df_w["ESTADO"]),
+                                           key="w_fil_state", on_change=_on_state_change)
             with c2:
-                unique_stores = _us(df_w[df_w["ESTADO"].isin(sel_state)]["TIENDA"]) if sel_state else _us(df_w["TIENDA"])
-                sel_store = st.multiselect("Tienda",  unique_stores)
-                sel_fmt   = st.multiselect("Formato", _us(df_w["FORMATO"]))
+                sel_fmt   = st.multiselect("Formato", _fmt_opts_w,
+                                           key="w_fil_fmt", on_change=_on_fmt_change)
+                sel_store = st.multiselect("Tienda",  _tienda_opts_w,
+                                           key="w_fil_store", on_change=_on_store_change)
             with c3:
                 excluidas_clean = {"ACEITE VEGETAL SABROSANO RINDE MAS 850ML","OLI SPRAY ACEITE DE OLIVA 145ML","ACEITE MIXTO GRAN TRADICION 1L","ACEITE GRAN TRADICION 900ML","NUTRIOLI 946 ML +PASTA CODO 200G","NUTRIOLI 946 ML +FUSILLI VERDURAS 200G","NUTRIOLI SPAGUETTI ESENCIAL 200G","NUTRIOLI FIDEO ESENCIAL 200G","NUTRIOLI CODO ESENCIAL 200G","NUTRIOLI FUSILLI VERDURAS 200G","NUTRIOLI CODO VERDURAS 200G"}
                 sel_prod = st.multiselect("Artículo", sorted([p for p in df_w["DESCRIPCION"].dropna().unique() if p.strip().upper() not in excluidas_clean]))
@@ -1193,41 +1464,44 @@ def view_walmart(df_w):
         dff_kpi = apply_filters(df_w,["MARCA","ESTADO","TIENDA","FORMATO"],[sel_marca,sel_state,sel_store,sel_fmt])
         dff     = apply_filters(dff_kpi,["DESCRIPCION"],[sel_prod])
 
+        # dff_graph con fallback progresivo
+        dff_graph = apply_filters(df_w,["ESTADO","TIENDA","FORMATO"],[sel_state,sel_store,sel_fmt])
+        if dff_graph.empty and sel_store:
+            dff_graph = apply_filters(df_w,["TIENDA"],[sel_store])
+        if dff_graph.empty and sel_state:
+            dff_graph = apply_filters(df_w,["ESTADO"],[sel_state])
+        if dff_graph.empty:
+            dff_graph = df_w
+
         b1,b2,b3,b4 = st.columns(4,gap="small")
         with b1: st.button("📉 NEGATIVOS",    on_click=tog_w, args=('w_neg',),       use_container_width=True, type="primary" if w_neg      else "secondary")
         with b2: st.button("🔴 SIN VTA 4SEM", on_click=tog_w, args=('w_4w',),        use_container_width=True, type="primary" if w_4w       else "secondary")
         with b3: st.button("📅 DIAS INV",     on_click=tog_w, args=('w_dias_inv',),  use_container_width=True, type="primary" if w_dias_inv  else "secondary")
         with b4: st.button("📋 DIAS X PROD",  on_click=tog_w, args=('w_dias_prod',), use_container_width=True, type="primary" if w_dias_prod else "secondary")
 
-        borges_list = ["BORGES ACEITE OLIVA EXTRA VIRGEN 500","BORGES ACEITE OLIVA EXTRA SUAVE","ACEITE DE OLIVA EXTRA VIRGEN KOSHER","ACEITE DE OLIVA A LA ALBAHACA FRESCA","ACEITE DE SOJA JENGIBRE","ACEITE DE OLIVA AL AJO FRITO","ACEITE DE OLIVA AL  ROMERO FRESCO","BORGES ACEITE DE PEPITA UVA 500ML","BORGES ACEITE DE OLIVA EXTRA VIRGEN ECOL","BORGES VINAGRE BALSAMICO 250ML","VINAGRE DE JEREZ 250 ML","VINAGRE DE SIDRA 250 ML","VINAGRE DE VINO FRAMBUESA","VINAGRE DE VINO AL  AJO 250 ML","BORGES VINAGRE VINO BLANCO","VINAGRE DE MANZANA ECOLOGICO","BORGES VINAGRE DE VINOTINTO","VINAGRE DE VINO DE RIOJA BOTELLA 250ML","BORGES ACEITE OLIVA 100 PURO CON AJO"]
-        borges_pat = "|".join([x.replace(" ","").upper() for x in borges_list])
-        desc_w = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["DESCRIPCION"].fillna("").str.upper().str.replace(" ","",regex=False).str.replace("&NBSP;","",regex=False)
-        conditions_w = [
-            desc_w.str.contains(borges_pat, regex=True, na=False),
-            desc_w.str.contains("NUTRIOLI",na=False)&desc_w.str.contains("946",na=False),
-            desc_w.str.contains("SABROSANO",na=False),
-            desc_w.str.contains("GRANTRADICION",na=False),
-            desc_w.str.contains("BALSAMICO",na=False),
-            (desc_w.str.contains("OLISPRAY|OLICOCINA|OLIDENUTEV|ACEITEOLIDEOLIVA|OLIDENUT",na=False))&~desc_w.str.contains("BALSAMICO",na=False),
-            desc_w.str.contains("NUTRIOLI",na=False)&desc_w.str.contains("SPAGUETTI|FIDEO|CODO|PASTA",na=False),
-            desc_w.str.contains("NUTRIOLI",na=False)
-        ]
-        conditions_w = [c.to_numpy(dtype=bool) for c in conditions_w]
-        choices_w = ["BORGES","NUTRIOLI","SABROSANO","GT","BALSAMICO","OLIVAS","PASTAS","REST NUTRIOLI"]
-        dff_cat = dff.copy(); dff_cat['Category'] = np.select(conditions_w, choices_w, default=None)
-
-        # ── Gráfica siempre visible ──────────────────────────────────────────
+        # ── Gráfica: merge con base categorizada — sin recalcular en cada filtro ──
+        dff_cat = dff_graph.merge(df_w_cat[["Category"]], left_index=True, right_index=True, how="left")
         c_kpi,c_chart = st.columns([1,2])
         total_so = dff_cat['SO_$'].sum()
         with c_kpi:
             st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
         with c_chart:
-            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-            pie_df = pie_df[pie_df['SO_$']>0]
-            if not pie_df.empty:
-                domain=["SABROSANO","GT","OLIVAS","BALSAMICO","PASTAS","REST NUTRIOLI","NUTRIOLI","BORGES"]
-                range_=["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#FF0000"]
-                fig = _make_pie(pie_df.to_json(), domain, range_, 'SO_$')
+            _hay_filtros_w = any([sel_store, sel_state, sel_fmt])
+            if _hay_filtros_w:
+                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+                pie_df = pie_df[pie_df['SO_$']>0]
+                if pie_df.empty:
+                    _pie_json_w = st.session_state.get("pie_base_walmart")
+                else:
+                    _pie_json_w = pie_df.to_json()
+            else:
+                _pie_json_w = st.session_state.get("pie_base_walmart")
+            if not _pie_json_w:
+                _fb = df_w_cat.dropna(subset=["Category"]).groupby("Category")["SO_$"].sum().reset_index()
+                _fb = _fb[_fb["SO_$"]>0]
+                _pie_json_w = _fb.to_json() if not _fb.empty else None
+            if _pie_json_w:
+                fig = build_pie_cached(_pie_json_w, "WALMART")
                 _ann = _filter_badge({"Tienda": sel_store, "Estado": sel_state, "Formato": sel_fmt}, RETAILER_COLORS["WALMART"])
                 if _ann: fig.add_annotation(**_ann)
                 st.plotly_chart(fig, use_container_width=True)
@@ -1323,6 +1597,7 @@ def view_walmart(df_w):
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
 def view_chedraui(df_c):
+    df_c_cat = pd.read_json(categorize_full_df(df_c.to_json(), "CHEDRAUI"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
 
     def tog_c(target):
@@ -1333,51 +1608,108 @@ def view_chedraui(df_c):
         st.session_state[f'c_rank_{mode.lower()}']=True
 
     if df_c is not None:
-        with st.expander("🔍 Filtros Avanzados", expanded=True):
+        # ── Inicializar claves de session_state ──────────────────────────────
+        for _k in ["c_fil_no","c_fil_ti","c_fil_ed"]:
+            if _k not in st.session_state:
+                st.session_state[_k] = []
+
+        # ── Callback: Tienda → autocompleta No Tienda y Estado ───────────────
+        def _on_ti_change():
+            ti = st.session_state.get("c_fil_ti", [])
+            if ti:
+                _t = df_c[df_c["TIENDA"].isin(ti)]
+                st.session_state["c_fil_no"] = sorted(_t["NO_TIENDA"].dropna().unique())
+                st.session_state["c_fil_ed"] = sorted(_t["ESTADO"].dropna().unique())
+            else:
+                st.session_state["c_fil_no"] = []
+                st.session_state["c_fil_ed"] = []
+
+        # ── Callback: No Tienda → autocompleta Tienda y Estado ───────────────
+        def _on_no_change():
+            no = st.session_state.get("c_fil_no", [])
+            if no:
+                _t = df_c[df_c["NO_TIENDA"].isin(no)]
+                st.session_state["c_fil_ti"] = sorted(_t["TIENDA"].dropna().unique())
+                st.session_state["c_fil_ed"] = sorted(_t["ESTADO"].dropna().unique())
+            else:
+                st.session_state["c_fil_ti"] = []
+                st.session_state["c_fil_ed"] = []
+
+        # ── Callback: Estado → limita Tienda y No Tienda ─────────────────────
+        def _on_ed_change():
+            if st.session_state.get("c_fil_ti") or st.session_state.get("c_fil_no"):
+                return  # Tienda / No Tienda tienen prioridad
+            st.session_state["c_fil_ti"] = []
+            st.session_state["c_fil_no"] = []
+
+        with st.container():
+            st.markdown("#### 🔍 Filtros Avanzados")
             c1,c2 = st.columns(2)
+
+            # Calcular opciones dinámicas antes de renderizar
+            _ti_sel = st.session_state.get("c_fil_ti", [])
+            _no_sel = st.session_state.get("c_fil_no", [])
+            _ed_sel = st.session_state.get("c_fil_ed", [])
+
+            if _ti_sel or _no_sel:
+                _scope = df_c[df_c["TIENDA"].isin(_ti_sel)] if _ti_sel else df_c[df_c["NO_TIENDA"].isin(_no_sel)]
+            elif _ed_sel:
+                _scope = df_c[df_c["ESTADO"].isin(_ed_sel)]
+            else:
+                _scope = df_c
+            _tienda_opts_c = sorted(_scope["TIENDA"].dropna().unique())
+            _no_opts_c     = sorted(_scope["NO_TIENDA"].dropna().unique())
+
             with c1:
-                fil_no  = st.multiselect("No Tienda",  _us(df_c["NO_TIENDA"]))
-                fil_ti  = st.multiselect("Tienda",     _us(df_c["TIENDA"]))
-                fil_cat = st.multiselect("Categoría",  _us(df_c["CATEGORIA"]))
+                fil_no  = st.multiselect("No Tienda", _no_opts_c,
+                                         key="c_fil_no", on_change=_on_no_change)
+                fil_cat = st.multiselect("Categoría", _us(df_c["CATEGORIA"]))
+                fil_ti  = st.multiselect("Tienda", _tienda_opts_c,
+                                         key="c_fil_ti", on_change=_on_ti_change)
             with c2:
-                fil_ed  = st.multiselect("Estado",     _us(df_c["ESTADO"]))
-                fil_art = st.multiselect("Artículo",   _us(df_c["ARTICULO"]))
+                fil_ed  = st.multiselect("Estado", _us(df_c["ESTADO"]),
+                                         key="c_fil_ed", on_change=_on_ed_change)
+                fil_art = st.multiselect("Artículo", _us(df_c["ARTICULO"]))
 
         dff_base = apply_filters(df_c,["NO_TIENDA","TIENDA","ESTADO","CATEGORIA"],[fil_no,fil_ti,fil_ed,fil_cat])
         dff      = apply_filters(dff_base,["ARTICULO"],[fil_art])
+
+        # dff_graph con fallback progresivo
+        dff_graph = apply_filters(df_c,["NO_TIENDA","TIENDA","ESTADO"],[fil_no,fil_ti,fil_ed])
+        if dff_graph.empty and (fil_no or fil_ti):
+            dff_graph = apply_filters(df_c,["NO_TIENDA","TIENDA"],[fil_no,fil_ti])
+        if dff_graph.empty and fil_ed:
+            dff_graph = apply_filters(df_c,["ESTADO"],[fil_ed])
+        if dff_graph.empty:
+            dff_graph = df_c
 
         b1,b2 = st.columns(2,gap="small")
         with b1: st.button("📉 NEGATIVOS", on_click=tog_c, args=('c_neg_zero',), use_container_width=True, type="primary" if c_neg_zero else "secondary")
         with b2: st.button("📅 DIAS INV",  on_click=tog_c, args=('c_dias_inv',), use_container_width=True, type="primary" if c_dias_inv else "secondary")
 
-        # ── Gráfica siempre visible ──────────────────────────────────────────
-        desc_c = dff["DESC_NORM"] if "DESC_NORM" in dff.columns else dff["ARTICULO"].fillna("").str.upper().str.replace(" ","",regex=False)
-        conditions_c = [
-            desc_c.str.contains("BALSAMICO",na=False),
-            desc_c.str.contains("SABROSANO",na=False),
-            desc_c.str.contains("GRANTRADICION",na=False),
-            desc_c.str.contains("MISAZON|MISAZÓN",na=False),
-            desc_c.str.contains("AVE",na=False)&desc_c.str.contains("SOYA-CANOLA|AEROSOL",na=False),
-            desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
-            desc_c.str.contains("OLI",na=False)&desc_c.str.contains("OLIVA|EV|AEROSOL",na=False),
-            desc_c.str.contains("NUTRIOLI",na=False)&desc_c.str.contains("400ML|850ML",na=False)&~desc_c.str.contains("PROTECT|DEFENSAS",na=False),
-            desc_c.str.contains("NUTRIOLI",na=False)
-        ]
-        conditions_c = [c.to_numpy(dtype=bool) for c in conditions_c]
-        choices_c = ["BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
-        dff_cat = dff.copy(); dff_cat['Category'] = np.select(conditions_c, choices_c, default=None)
-
+        # ── Gráfica: merge con base categorizada — sin recalcular en cada filtro ──
+        dff_cat = dff_graph.merge(df_c_cat[["Category"]], left_index=True, right_index=True, how="left")
         c_kpi,c_chart = st.columns([1,2])
         with c_kpi:
             total_so = dff_cat['SELL_OUT'].sum()
             st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#FF6600;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
         with c_chart:
-            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
-            pie_df = pie_df[pie_df['SELL_OUT']>0]
-            if not pie_df.empty:
-                domain=["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"]
-                range_=["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"]
-                fig = _make_pie(pie_df.to_json(), domain, range_, 'SELL_OUT')
+            _hay_filtros_c = any([fil_no, fil_ti, fil_ed])
+            if _hay_filtros_c:
+                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
+                pie_df = pie_df[pie_df['SELL_OUT']>0]
+                if pie_df.empty:
+                    _pie_json_c = st.session_state.get("pie_base_chedraui")
+                else:
+                    _pie_json_c = pie_df.to_json()
+            else:
+                _pie_json_c = st.session_state.get("pie_base_chedraui")
+            if not _pie_json_c:
+                _fb = df_c_cat.dropna(subset=["Category"]).groupby("Category")["SELL_OUT"].sum().reset_index()
+                _fb = _fb[_fb["SELL_OUT"]>0]
+                _pie_json_c = _fb.to_json() if not _fb.empty else None
+            if _pie_json_c:
+                fig = build_pie_cached(_pie_json_c, "CHEDRAUI")
                 _ann = _filter_badge({"No tienda": fil_no, "Tienda": fil_ti, "Estado": fil_ed}, RETAILER_COLORS["CHEDRAUI"])
                 if _ann: fig.add_annotation(**_ann)
                 st.plotly_chart(fig, use_container_width=True)
