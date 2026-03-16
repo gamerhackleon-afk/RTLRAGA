@@ -861,9 +861,14 @@ div[data-baseweb="select"] > div {{
     align-items: center !important;
 }}
 div[data-baseweb="select"] > div > div {{
-    overflow: hidden !important;
+    overflow: visible !important;
+    display: flex !important;
+    align-items: center !important;
     flex-wrap: nowrap !important;
     max-height: 42px !important;
+}}
+div[data-baseweb="select"] input {{
+    line-height: 42px !important;
 }}
 div[data-baseweb="tag"] {{
     max-width: 90px !important;
@@ -916,7 +921,7 @@ st.components.v1.html("""
         _obs = new MutationObserver(function() {
             win.scrollTo({ top: _savedY, behavior: 'instant' });
         });
-        _obs.observe(doc.body, { childList: true, subtree: true, attributes: true, characterData: true });
+        _obs.observe(doc.body, { childList: true, subtree: true });
         setTimeout(function() {
             if (_obs) { _obs.disconnect(); _obs = null; }
         }, ms || 1200);
@@ -929,7 +934,7 @@ st.components.v1.html("""
         var _origSend = WebSocket.prototype.send;
         WebSocket.prototype.send = function(data) {
             saveScroll();
-            startLock(300);
+            startLock(200);
             return _origSend.apply(this, arguments);
         };
     } catch(e) {}
@@ -945,19 +950,19 @@ st.components.v1.html("""
         // Opciones del dropdown (click en item de lista)
         root.querySelectorAll('[role="option"]').forEach(function(el) {
             if (el._sl) return; el._sl = true;
-            el.addEventListener('mousedown', function() { saveScroll(); startLock(300); }, true);
-            el.addEventListener('click',     function() { startLock(300); }, true);
+            el.addEventListener('mousedown', function() { saveScroll(); startLock(200); }, true);
+            el.addEventListener('click',     function() { startLock(200); }, true);
         });
         // Tags (chips) — clic en X para quitar filtro
         root.querySelectorAll('[data-baseweb="tag"] [role="button"]').forEach(function(el) {
             if (el._sl) return; el._sl = true;
-            el.addEventListener('mousedown', function() { saveScroll(); startLock(300); }, true);
+            el.addEventListener('mousedown', function() { saveScroll(); startLock(200); }, true);
         });
         // Botones generales
         root.querySelectorAll('button').forEach(function(el) {
             if (el._sl) return; el._sl = true;
             el.addEventListener('mousedown', saveScroll, true);
-            el.addEventListener('click', function() { startLock(300); }, true);
+            el.addEventListener('click', function() { startLock(200); }, true);
         });
     }
 
@@ -1235,17 +1240,17 @@ def view_soriana(df_s):
             with c1:
                 opts_res = ["Todos"] + _us(df_s["RESURTIMIENTO"])
                 def_res  = ["1.0"] if "1.0" in opts_res else (["1"] if "1" in opts_res else ["Todos"])
-                fil_res = st.multiselect("Resurtible", opts_res, default=def_res)
-                fil_nda = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]),
+                fil_res = st.multiselect("Resurtible", opts_res, default=def_res, placeholder="Seleccionar...")
+                fil_nda = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]), placeholder="Seleccionar...",
                                          key="s_fil_nda", on_change=_on_nda_change)
-                fil_nom = st.multiselect("Nombre", _opts_nom,
+                fil_nom = st.multiselect("Nombre", _opts_nom, placeholder="Seleccionar...",
                                          key="s_fil_nom", on_change=_on_nom_change)
             with c2:
-                fil_edo = st.multiselect("Estado", _us(df_s["ESTADO"]),
+                fil_edo = st.multiselect("Estado", _us(df_s["ESTADO"]), placeholder="Seleccionar...",
                                          key="s_fil_edo", on_change=_on_edo_change)
-                fil_cd  = st.multiselect("Ciudad",  _opts_cd,  key="s_fil_cd")
-                fil_fmt = st.multiselect("Formato", _opts_fmt, key="s_fil_fmt")
-                fil_art = st.multiselect("Artículo", _us(df_s["DESCRIPCION"]))
+                fil_cd  = st.multiselect("Ciudad",  _opts_cd,  key="s_fil_cd", placeholder="Seleccionar...")
+                fil_fmt = st.multiselect("Formato", _opts_fmt, key="s_fil_fmt", placeholder="Seleccionar...")
+                fil_art = st.multiselect("Artículo", _us(df_s["DESCRIPCION"]), placeholder="Seleccionar...")
 
         dff = apply_filters(df_s,
             ["RESURTIMIENTO","NO_TIENDA","TIENDA","CIUDAD","ESTADO","FORMATO","DESCRIPCION"],
@@ -1355,8 +1360,8 @@ def view_soriana(df_s):
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         sm1,sm2 = st.columns(2)
-        with sm1: sel_s_rank_st  = st.multiselect("Estado (Ranking)",  _us(df_s["ESTADO"]),  key="s_rnk_st")
-        with sm2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", _us(df_s["FORMATO"]), key="s_rnk_fmt")
+        with sm1: sel_s_rank_st  = st.multiselect("Estado (Ranking)",  _us(df_s["ESTADO"]),  key="s_rnk_st", placeholder="Seleccionar...")
+        with sm2: sel_s_rank_fmt = st.multiselect("Formato (Ranking)", _us(df_s["FORMATO"]), key="s_rnk_fmt", placeholder="Seleccionar...")
         sr1,sr2,sr3,sr4 = st.columns(4,gap="small")
         with sr1: st.button("📊 GENERAL",  on_click=set_s_rank, args=('GEN',), use_container_width=True, type="primary" if s_rank_gen else "secondary")
         with sr2: st.button("🍝 PASTAS",   on_click=set_s_rank, args=('PAS',), use_container_width=True, type="primary" if s_rank_pas else "secondary")
@@ -1449,17 +1454,17 @@ def view_walmart(df_w):
 
             with c1:
                 marca_opts = sorted([m for m in df_w["MARCA"].dropna().unique() if m.strip().upper() not in ["NUTRIOLI + PASTA","NUTRIOLI  PASTA","NUTRIOLI PASTA"]])
-                sel_marca = st.multiselect("Marca", marca_opts)
-                sel_state = st.multiselect("Estado", _us(df_w["ESTADO"]),
+                sel_marca = st.multiselect("Marca", marca_opts, placeholder="Seleccionar...")
+                sel_state = st.multiselect("Estado", _us(df_w["ESTADO"]), placeholder="Seleccionar...",
                                            key="w_fil_state", on_change=_on_state_change)
             with c2:
-                sel_fmt   = st.multiselect("Formato", _fmt_opts_w,
+                sel_fmt   = st.multiselect("Formato", _fmt_opts_w, placeholder="Seleccionar...",
                                            key="w_fil_fmt", on_change=_on_fmt_change)
-                sel_store = st.multiselect("Tienda",  _tienda_opts_w,
+                sel_store = st.multiselect("Tienda",  _tienda_opts_w, placeholder="Seleccionar...",
                                            key="w_fil_store", on_change=_on_store_change)
             with c3:
                 excluidas_clean = {"ACEITE VEGETAL SABROSANO RINDE MAS 850ML","OLI SPRAY ACEITE DE OLIVA 145ML","ACEITE MIXTO GRAN TRADICION 1L","ACEITE GRAN TRADICION 900ML","NUTRIOLI 946 ML +PASTA CODO 200G","NUTRIOLI 946 ML +FUSILLI VERDURAS 200G","NUTRIOLI SPAGUETTI ESENCIAL 200G","NUTRIOLI FIDEO ESENCIAL 200G","NUTRIOLI CODO ESENCIAL 200G","NUTRIOLI FUSILLI VERDURAS 200G","NUTRIOLI CODO VERDURAS 200G"}
-                sel_prod = st.multiselect("Artículo", sorted([p for p in df_w["DESCRIPCION"].dropna().unique() if p.strip().upper() not in excluidas_clean]))
+                sel_prod = st.multiselect("Artículo", sorted([p for p in df_w["DESCRIPCION"].dropna().unique() if p.strip().upper() not in excluidas_clean]), placeholder="Seleccionar...")
 
         dff_kpi = apply_filters(df_w,["MARCA","ESTADO","TIENDA","FORMATO"],[sel_marca,sel_state,sel_store,sel_fmt])
         dff     = apply_filters(dff_kpi,["DESCRIPCION"],[sel_prod])
@@ -1565,8 +1570,8 @@ def view_walmart(df_w):
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
         cm1,cm2 = st.columns(2)
-        with cm1: sel_st_rank  = st.multiselect("Estado (Ranking)",  _us(df_w["ESTADO"]),  key="rnk_st")
-        with cm2: sel_fmt_rank = st.multiselect("Formato (Ranking)", _us(df_w["FORMATO"]), key="rnk_fmt")
+        with cm1: sel_st_rank  = st.multiselect("Estado (Ranking)",  _us(df_w["ESTADO"]),  key="rnk_st", placeholder="Seleccionar...")
+        with cm2: sel_fmt_rank = st.multiselect("Formato (Ranking)", _us(df_w["FORMATO"]), key="rnk_fmt", placeholder="Seleccionar...")
         sr1,sr2,sr3,sr4 = st.columns(4,gap="small")
         with sr1: st.button("📊 GENERAL",  on_click=set_rank, args=('tiendas',),  use_container_width=True, type="primary" if w_rank_tiendas else "secondary")
         with sr2: st.button("🍝 PASTAS",   on_click=set_rank, args=('pastas',),   use_container_width=True, type="primary" if w_rank_pastas  else "secondary")
@@ -1661,15 +1666,15 @@ def view_chedraui(df_c):
             _no_opts_c     = sorted(_scope["NO_TIENDA"].dropna().unique())
 
             with c1:
-                fil_no  = st.multiselect("No Tienda", _no_opts_c,
+                fil_no  = st.multiselect("No Tienda", _no_opts_c, placeholder="Seleccionar...",
                                          key="c_fil_no", on_change=_on_no_change)
-                fil_cat = st.multiselect("Categoría", _us(df_c["CATEGORIA"]))
-                fil_ti  = st.multiselect("Tienda", _tienda_opts_c,
+                fil_cat = st.multiselect("Categoría", _us(df_c["CATEGORIA"]), placeholder="Seleccionar...")
+                fil_ti  = st.multiselect("Tienda", _tienda_opts_c, placeholder="Seleccionar...",
                                          key="c_fil_ti", on_change=_on_ti_change)
             with c2:
-                fil_ed  = st.multiselect("Estado", _us(df_c["ESTADO"]),
+                fil_ed  = st.multiselect("Estado", _us(df_c["ESTADO"]), placeholder="Seleccionar...",
                                          key="c_fil_ed", on_change=_on_ed_change)
-                fil_art = st.multiselect("Artículo", _us(df_c["ARTICULO"]))
+                fil_art = st.multiselect("Artículo", _us(df_c["ARTICULO"]), placeholder="Seleccionar...")
 
         dff_base = apply_filters(df_c,["NO_TIENDA","TIENDA","ESTADO","CATEGORIA"],[fil_no,fil_ti,fil_ed,fil_cat])
         dff      = apply_filters(dff_base,["ARTICULO"],[fil_art])
