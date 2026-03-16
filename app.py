@@ -8,6 +8,9 @@ import plotly.express as px
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Eliminar límite de celdas del Styler de Pandas — evita error con tablas grandes
+pd.set_option("styler.render.max_elements", 2_000_000)
+
 # --- 1. CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="Dashboard de Inventarios",
@@ -69,7 +72,7 @@ _view_vars = [
     's_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut',
     'w_neg','w_4w','w_dias_inv','w_dias_prod',
     'w_rank_tiendas','w_rank_pastas','w_rank_olivas','w_nutri_top10',
-    'c_neg_zero','c_dias_inv','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut',
+    'c_neg_zero','c_dias_inv','c_transito','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut',
 ]
 for _v in _view_vars:
     if _v not in st.session_state:
@@ -80,14 +83,18 @@ def safe_mean(series):
     return series.mean() if not series.empty else 0
 
 def apply_filters(df, filter_cols, selections):
-    mask = pd.Series(True, index=df.index)
+    mask = np.ones(len(df), dtype=bool)
     for col, sel in zip(filter_cols, selections):
         if sel and col in df.columns:
-            mask &= df[col].isin(sel)
+            mask &= df[col].isin(set(sel)).values  # set() O(1) + numpy array directo
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
-    clean_desc = df[desc_col].fillna("").str.upper().str.replace("&NBSP;", "", regex=False).str.replace(" ", "", regex=False)
+    # Reutilizar DESC_NORM si existe — evita recalcular normalización en cada KPI
+    if "DESC_NORM" in df.columns:
+        clean_desc = df["DESC_NORM"]
+    else:
+        clean_desc = df[desc_col].fillna("").str.upper().str.replace("&NBSP;", "", regex=False).str.replace(" ", "", regex=False)
     clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
     mask = clean_desc.str.contains(clean_pattern, case=False, na=False)
     return safe_mean(df.loc[mask, days_col])
@@ -450,6 +457,10 @@ def load_wal(path):
         df['PROM_PZS_MENSUAL'] = df[["VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4"]].mean(axis=1)
         df = _str_cols(df, ["CODIGO", "DESCRIPCION", "CATEGORIA", "ESTADO", "TIENDA", "FORMATO", "MARCA"])
         df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
+        # Columnas de tipo category: reduce memoria y acelera isin/groupby
+        for _cat_col in ["TIENDA", "ESTADO", "FORMATO", "MARCA", "CATEGORIA"]:
+            if _cat_col in df.columns:
+                df[_cat_col] = df[_cat_col].astype("category")
         return optimize_floats(df)
     except Exception as e:
         st.error(f"Error procesando Walmart: {e}")
@@ -477,7 +488,8 @@ def load_che(path):
             "NO_TIENDA": ["# TDA", "NO TIENDA", "NO_TIENDA"],
             "TIENDA": ["TIENDA", "Tienda"],
             "ARTICULO": ["DESCRIPCION", "DESCRIPCIÓN", "ARTICULO", "Sku"],
-            "INV_ULT_SEM": ["INVENTARIO"], 
+            "INV_ULT_SEM": ["INVENTARIO"],
+            "TRANSITO_CEDIS": ["Transitos de cedis a tiendas", "TRANSITOS DE CEDIS A TIENDAS", "TRANSITO CEDIS"],
             "VTA_PROM_DIARIA": ["VENTA PROM DIARIO", "VTA PROM"],
             "DIAS_INV": ["DIAS DE INVENTARIO", "DIAS INV"],
             "SELL_OUT": ["VENTA $", "SELL OUT", "VENTA"]
@@ -491,7 +503,7 @@ def load_che(path):
         df = df.dropna(subset=["ARTICULO"])
         df = df[pd.to_numeric(df["NO_TIENDA"], errors='coerce').notna()]
         
-        for col in ["INV_ULT_SEM", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]:
+        for col in ["INV_ULT_SEM", "TRANSITO_CEDIS", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
         df = _str_cols(df, ["ESTADO", "COORDINADOR", "EJECUTIVO", "PROMOTOR", "CATEGORIA", "NO_TIENDA", "TIENDA", "ARTICULO"])
@@ -685,6 +697,7 @@ w_nutri_top10  = st.session_state.get('w_nutri_top10',  False)
 
 c_neg_zero = st.session_state.get('c_neg_zero', False)
 c_dias_inv = st.session_state.get('c_dias_inv', False)
+c_transito_c = st.session_state.get('c_transito', False)
 c_rank_gen = st.session_state.get('c_rank_gen', False)
 c_rank_pas = st.session_state.get('c_rank_pas', False)
 c_rank_oli = st.session_state.get('c_rank_oli', False)
@@ -740,8 +753,9 @@ def inject_button_styles():
         ])
     elif act == "CHEDRAUI":
         STYLES.extend([
-            ("📉 NEGATIVOS",   "#B71C1C", "#ffffff", _neg_active,  "#ffffff", "rgba(183,28,28,0.85)",   False, "#EF9A9A"),
-            ("📅 DIAS INV",    "#00695C", "#ffffff", _dias_active, "#ffffff", "rgba(0,105,92,0.85)",    False, "#80CBC4"),
+            ("📉 NEGATIVOS",          "#B71C1C", "#ffffff", _neg_active,     "#ffffff", "rgba(183,28,28,0.85)",   False, "#EF9A9A"),
+            ("📅 DIAS INV",           "#00695C", "#ffffff", _dias_active,    "#ffffff", "rgba(0,105,92,0.85)",    False, "#80CBC4"),
+            ("🚚 PEDIDOS EN TRANSITO","#8507F0", "#ffffff", c_transito_c,    "#ffffff", "rgba(176,108,240,0.85)", False, "#CE93D8"),
         ])
 
     js_cases = []
@@ -869,6 +883,8 @@ div[data-baseweb="select"] > div > div {{
 }}
 div[data-baseweb="select"] input {{
     line-height: 42px !important;
+    font-size: 0.9rem !important;
+    padding-left: 6px !important;
 }}
 div[data-baseweb="tag"] {{
     max-width: 90px !important;
@@ -879,6 +895,11 @@ div[data-baseweb="tag"] {{
 }}
 div[data-baseweb="select"] span {{
     white-space: nowrap !important;
+}}
+/* Dropdown compacto — lista más rápida de renderizar */
+div[data-baseweb="popover"] {{
+    max-height: 320px !important;
+    overflow-y: auto !important;
 }}
 /* Evitar que las columnas se desplacen al cambiar altura de sus hijos */
 [data-testid="stHorizontalBlock"] {{
@@ -901,75 +922,31 @@ div[data-baseweb="select"] span {{
 </style>
 """, unsafe_allow_html=True)
 
-# Bloquear scroll automático de Streamlit en cualquier interacción
+# Preservar posición de scroll durante reruns de Streamlit
 st.components.v1.html("""
 <script>
 (function() {
-    var doc = window.parent.document;
-    var win = window.parent;
-    var _savedY = 0;
-    var _obs = null;
+    const win = window.parent;
+    let savedScroll = 0;
+    let restoring = false;
 
     function saveScroll() {
-        _savedY = win.scrollY;
+        savedScroll = win.scrollY;
+        restoring = true;
     }
 
-    function startLock(ms) {
-        // Cancelar observer anterior si existe
-        if (_obs) { _obs.disconnect(); _obs = null; }
-        saveScroll();
-        _obs = new MutationObserver(function() {
-            win.scrollTo({ top: _savedY, behavior: 'instant' });
-        });
-        _obs.observe(doc.body, { childList: true, subtree: true });
-        setTimeout(function() {
-            if (_obs) { _obs.disconnect(); _obs = null; }
-        }, ms || 1200);
+    function restoreScroll() {
+        if (!restoring) return;
+        win.scrollTo({ top: savedScroll, behavior: "instant" });
+        restoring = false;
     }
 
-    // ── Interceptar el WebSocket de Streamlit para capturar reruns ──────────
-    // Cuando Streamlit envía un mensaje al servidor (ej. callback on_change),
-    // guardamos el scroll ANTES de que llegue la respuesta y re-renderice.
-    try {
-        var _origSend = WebSocket.prototype.send;
-        WebSocket.prototype.send = function(data) {
-            saveScroll();
-            startLock(200);
-            return _origSend.apply(this, arguments);
-        };
-    } catch(e) {}
+    win.document.addEventListener("mousedown", saveScroll, true);
 
-    // ── También capturar interacciones directas del DOM ───────────────────
-    function attachListeners(root) {
-        // Inputs de multiselect (typing para buscar)
-        root.querySelectorAll('[data-baseweb="select"] input').forEach(function(el) {
-            if (el._sl) return; el._sl = true;
-            el.addEventListener('mousedown', saveScroll, true);
-            el.addEventListener('focus', saveScroll, true);
-        });
-        // Opciones del dropdown (click en item de lista)
-        root.querySelectorAll('[role="option"]').forEach(function(el) {
-            if (el._sl) return; el._sl = true;
-            el.addEventListener('mousedown', function() { saveScroll(); startLock(200); }, true);
-            el.addEventListener('click',     function() { startLock(200); }, true);
-        });
-        // Tags (chips) — clic en X para quitar filtro
-        root.querySelectorAll('[data-baseweb="tag"] [role="button"]').forEach(function(el) {
-            if (el._sl) return; el._sl = true;
-            el.addEventListener('mousedown', function() { saveScroll(); startLock(200); }, true);
-        });
-        // Botones generales
-        root.querySelectorAll('button').forEach(function(el) {
-            if (el._sl) return; el._sl = true;
-            el.addEventListener('mousedown', saveScroll, true);
-            el.addEventListener('click', function() { startLock(200); }, true);
-        });
-    }
-
-    attachListeners(doc);
-    new MutationObserver(function() {
-        attachListeners(doc);
-    }).observe(doc.body, { childList: true, subtree: true });
+    new MutationObserver(restoreScroll).observe(
+        win.document.body,
+        { childList: true, subtree: true }
+    );
 })();
 </script>
 """, height=0, scrolling=False)
@@ -1082,10 +1059,14 @@ if not st.session_state.data_loaded:
             _pie_key = f"pie_base_{_rk.lower()}"
             # Categorizar si no está en session_state
             if _cat_key not in st.session_state:
-                st.session_state[_cat_key] = pd.read_json(categorize_full_df(_df_pre.to_json(), _rk))
-            # Pre-calcular groupby base si no está en session_state
+                _cat_json = categorize_full_df(_df_pre.to_json(), _rk)  # JSON cacheado
+                st.session_state[_cat_key] = pd.read_json(_cat_json)
+            else:
+                _cat_json = None  # ya en session_state, no necesitamos el JSON
+            # Pre-calcular groupby base reutilizando _cat_json — evita to_json() extra
             if _pie_key not in st.session_state:
-                _pie_json = precompute_pie_base(st.session_state[_cat_key].to_json(), _rk)
+                _pie_src = _cat_json if _cat_json is not None else st.session_state[_cat_key].to_json()
+                _pie_json = precompute_pie_base(_pie_src, _rk)
                 if _pie_json:
                     st.session_state[_pie_key] = _pie_json
     except Exception:
@@ -1241,9 +1222,9 @@ def view_soriana(df_s):
                 opts_res = ["Todos"] + _us(df_s["RESURTIMIENTO"])
                 def_res  = ["1.0"] if "1.0" in opts_res else (["1"] if "1" in opts_res else ["Todos"])
                 fil_res = st.multiselect("Resurtible", opts_res, default=def_res, placeholder="Seleccionar...")
-                fil_nda = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]), placeholder="Seleccionar...",
+                fil_nda = st.multiselect("No Tienda", _us(df_s["NO_TIENDA"]), placeholder="Buscar no. tienda...",
                                          key="s_fil_nda", on_change=_on_nda_change)
-                fil_nom = st.multiselect("Nombre", _opts_nom, placeholder="Seleccionar...",
+                fil_nom = st.multiselect("Nombre", _opts_nom, placeholder="Buscar tienda...",
                                          key="s_fil_nom", on_change=_on_nom_change)
             with c2:
                 fil_edo = st.multiselect("Estado", _us(df_s["ESTADO"]), placeholder="Seleccionar...",
@@ -1313,7 +1294,6 @@ def view_soriana(df_s):
             disp_transito = dff_transito[["FORMATO", "TIENDA", "CODIGO", "DESCRIPCION", "PEDIDOS", "FECHA_ENTREGA", "CANTIDAD_PZS"]].copy()
             disp_transito.columns = ['FORMATO', 'NOMBRE DE TIENDA', 'CODIGO', 'ARTICULO', 'PEDIDOS', 'FECHA DE ENTREGA', 'CANTIDAD EN PZS']
             st.dataframe(disp_transito.style.format({'PEDIDOS': "{:,.0f}", 'CANTIDAD EN PZS': "{:,.0f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_transito))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_transito), file_name="Soriana_Pedidos_Transito.xlsx", use_container_width=True)
 
         elif st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
@@ -1332,7 +1312,6 @@ def view_soriana(df_s):
                     res_rows.append({"CODIGO": "-", "ARTICULO": item, "DIAS INV TENDENCIA": 0})
             df_prod_summary = pd.DataFrame(res_rows)
             st.dataframe(df_prod_summary.style.format({'DIAS INV TENDENCIA':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(df_prod_summary))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(df_prod_summary), file_name="Soriana_Dias_Producto.xlsx", use_container_width=True)
 
         elif st.session_state.s_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -1347,7 +1326,6 @@ def view_soriana(df_s):
             disp = dff[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
             disp.columns = ['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Soriana_Reporte_Dias.xlsx", use_container_width=True)
 
         else:
             if st.session_state.s_rojo: dff_cat=dff_cat[dff_cat['SIN_VTA']]; st.caption("📋 Vista: Sin Venta")
@@ -1355,7 +1333,6 @@ def view_soriana(df_s):
             disp.columns=['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM',ascending=False)
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Soriana_General.xlsx", use_container_width=True)
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -1384,7 +1361,6 @@ def view_soriana(df_s):
                 final_s_rank = dff_sub.groupby(["NO_TIENDA","TIENDA"])['SO_$'].sum().reset_index()
                 final_s_rank.columns=['No Tienda','TIENDA',rank_title_s]
                 st.dataframe(final_s_rank.sort_values(by=rank_title_s,ascending=False).style.format({rank_title_s:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_s_rank))
-                st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_s_rank), file_name="Soriana_Ranking.xlsx", use_container_width=True)
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
 def view_walmart(df_w):
@@ -1460,7 +1436,7 @@ def view_walmart(df_w):
             with c2:
                 sel_fmt   = st.multiselect("Formato", _fmt_opts_w, placeholder="Seleccionar...",
                                            key="w_fil_fmt", on_change=_on_fmt_change)
-                sel_store = st.multiselect("Tienda",  _tienda_opts_w, placeholder="Seleccionar...",
+                sel_store = st.multiselect("Tienda",  _tienda_opts_w, placeholder="Buscar tienda...",
                                            key="w_fil_store", on_change=_on_store_change)
             with c3:
                 excluidas_clean = {"ACEITE VEGETAL SABROSANO RINDE MAS 850ML","OLI SPRAY ACEITE DE OLIVA 145ML","ACEITE MIXTO GRAN TRADICION 1L","ACEITE GRAN TRADICION 900ML","NUTRIOLI 946 ML +PASTA CODO 200G","NUTRIOLI 946 ML +FUSILLI VERDURAS 200G","NUTRIOLI SPAGUETTI ESENCIAL 200G","NUTRIOLI FIDEO ESENCIAL 200G","NUTRIOLI CODO ESENCIAL 200G","NUTRIOLI FUSILLI VERDURAS 200G","NUTRIOLI CODO VERDURAS 200G"}
@@ -1519,7 +1495,6 @@ def view_walmart(df_w):
             disp=dff_neg[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_Negativos.xlsx", use_container_width=True)
 
         elif st.session_state.w_4w:
             dff_4w = dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]
@@ -1527,7 +1502,6 @@ def view_walmart(df_w):
             disp=dff_4w[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_SinVenta4Sem.xlsx", use_container_width=True)
 
         elif st.session_state.w_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
@@ -1543,7 +1517,6 @@ def view_walmart(df_w):
                     res_rows.append({"CODIGO":"-","ARTICULO":item,"DIAS DE INV":0,"SELL OUT":0})
             df_ps = pd.DataFrame(res_rows)
             st.dataframe(df_ps.style.format({'DIAS DE INV':"{:,.1f}",'SELL OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(df_ps))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(df_ps), file_name="Walmart_Dias_Producto.xlsx", use_container_width=True)
 
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -1559,13 +1532,11 @@ def view_walmart(df_w):
             disp_w_dias = dff[["TIENDA","CODIGO","DESCRIPCION","DIAS_INV"]].copy()
             disp_w_dias.columns = ["TIENDA","CODIGO","DESCRIPCION","DIAS INVENTARIO"]
             st.dataframe(disp_w_dias.style.format({'DIAS INVENTARIO':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_w_dias))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_w_dias), file_name="Walmart_Reporte_Dias.xlsx", use_container_width=True)
 
         else:
             disp=dff_cat[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Walmart_General.xlsx", use_container_width=True)
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -1599,14 +1570,13 @@ def view_walmart(df_w):
             fmt_dict = {c:"${:,.2f}" for c in final_rank.columns if "($)" in c or "$" in c}
             if "INVENTARIO" in final_rank.columns: fmt_dict["INVENTARIO"]="{:,.0f}"
             st.dataframe(final_rank.style.format(fmt_dict), use_container_width=True, hide_index=True, height=auto_height(final_rank))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
 def view_chedraui(df_c):
     df_c_cat = pd.read_json(categorize_full_df(df_c.to_json(), "CHEDRAUI"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
 
     def tog_c(target):
-        for v in ['c_neg_zero','c_dias_inv']:
+        for v in ['c_neg_zero','c_dias_inv','c_transito']:
             st.session_state[v] = True if v==target and not st.session_state[v] else False
     def set_c_rank(mode):
         for v in ['c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut']: st.session_state[v]=False
@@ -1666,10 +1636,10 @@ def view_chedraui(df_c):
             _no_opts_c     = sorted(_scope["NO_TIENDA"].dropna().unique())
 
             with c1:
-                fil_no  = st.multiselect("No Tienda", _no_opts_c, placeholder="Seleccionar...",
+                fil_no  = st.multiselect("No Tienda", _no_opts_c, placeholder="Buscar no. tienda...",
                                          key="c_fil_no", on_change=_on_no_change)
                 fil_cat = st.multiselect("Categoría", _us(df_c["CATEGORIA"]), placeholder="Seleccionar...")
-                fil_ti  = st.multiselect("Tienda", _tienda_opts_c, placeholder="Seleccionar...",
+                fil_ti  = st.multiselect("Tienda", _tienda_opts_c, placeholder="Buscar tienda...",
                                          key="c_fil_ti", on_change=_on_ti_change)
             with c2:
                 fil_ed  = st.multiselect("Estado", _us(df_c["ESTADO"]), placeholder="Seleccionar...",
@@ -1688,9 +1658,10 @@ def view_chedraui(df_c):
         if dff_graph.empty:
             dff_graph = df_c
 
-        b1,b2 = st.columns(2,gap="small")
-        with b1: st.button("📉 NEGATIVOS", on_click=tog_c, args=('c_neg_zero',), use_container_width=True, type="primary" if c_neg_zero else "secondary")
-        with b2: st.button("📅 DIAS INV",  on_click=tog_c, args=('c_dias_inv',), use_container_width=True, type="primary" if c_dias_inv else "secondary")
+        b1,b2,b3 = st.columns(3,gap="small")
+        with b1: st.button("📉 NEGATIVOS",         on_click=tog_c, args=('c_neg_zero',), use_container_width=True, type="primary" if c_neg_zero   else "secondary")
+        with b2: st.button("📅 DIAS INV",           on_click=tog_c, args=('c_dias_inv',), use_container_width=True, type="primary" if c_dias_inv   else "secondary")
+        with b3: st.button("🚚 PEDIDOS EN TRANSITO",on_click=tog_c, args=('c_transito',), use_container_width=True, type="primary" if c_transito_c else "secondary")
 
         # ── Gráfica: merge con base categorizada — sin recalcular en cada filtro ──
         dff_cat = dff_graph.merge(df_c_cat[["Category"]], left_index=True, right_index=True, how="left")
@@ -1721,7 +1692,21 @@ def view_chedraui(df_c):
             else: st.info("Sin datos para gráfica.")
 
         # ── Contenido de botones de acción (debajo de la gráfica) ────────────
-        if st.session_state.c_dias_inv:
+        if st.session_state.get('c_transito'):
+            st.subheader("🚚 Pedidos en Tránsito — Cédis a Tiendas")
+            if "TRANSITO_CEDIS" in dff.columns:
+                dff_transito_c = dff[dff["TRANSITO_CEDIS"] > 0].copy()
+                if not dff_transito_c.empty:
+                    disp_tc = dff_transito_c[["ESTADO","NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","TRANSITO_CEDIS"]].copy()
+                    disp_tc.columns = ["ESTADO","NO TIENDA","TIENDA","ARTÍCULO","INVENTARIO","TRÁNSITO CEDIS"]
+                    st.dataframe(disp_tc.style.format({"INVENTARIO":"{:,.0f}","TRÁNSITO CEDIS":"{:,.0f}"}),
+                                 use_container_width=True, hide_index=True, height=auto_height(disp_tc))
+                else:
+                    st.info("✅ No hay pedidos en tránsito para los filtros seleccionados.")
+            else:
+                st.warning("⚠️ La columna 'Transitos de cedis a tiendas' no se encontró en la base de Chedraui.")
+
+        elif st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             val_nut = get_kpi_mean(dff_base,"ARTICULO","DIAS_INV","Nutrioli Bot 850")
             val_sab = get_kpi_mean(dff_base,"ARTICULO","DIAS_INV","Sabrosano Mixto 850")
@@ -1733,7 +1718,6 @@ def view_chedraui(df_c):
             disp=dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
             disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_Dias_Inventario.xlsx", use_container_width=True)
 
         elif st.session_state.c_neg_zero:
             dff_neg = dff[dff["INV_ULT_SEM"]<0].copy()
@@ -1741,14 +1725,12 @@ def view_chedraui(df_c):
             disp_neg = dff_neg[["ESTADO","COORDINADOR","EJECUTIVO","PROMOTOR","CATEGORIA","NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM"]].copy()
             disp_neg.columns=["ESTADO","Coordinador","Ejecutivo","Promotor","Categoria","No de tienda","Tienda","articulo","Inventario 06 Mar 2026"]
             st.dataframe(disp_neg.style.format({'Inventario 06 Mar 2026':"{:,.0f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Chedraui_Negativos.xlsx", use_container_width=True)
 
         else:
             st.caption("📋 Vista: Completa")
             disp=dff_cat[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
             disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_General.xlsx", use_container_width=True)
 
         st.divider()
         st.markdown("<h3 style='text-align:center;color:#444;'>🏆 RANKING DE VENTAS</h3>", unsafe_allow_html=True)
@@ -1777,7 +1759,6 @@ def view_chedraui(df_c):
                 final_c_rank.columns=['No Tienda','TIENDA',rank_title]
                 final_c_rank = final_c_rank.sort_values(by=rank_title,ascending=False)
                 st.dataframe(final_c_rank.style.format({rank_title:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
-                st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_c_rank), file_name="Chedraui_Ranking.xlsx", use_container_width=True)
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
 
 # --- 14. EJECUTAR VISTA ACTIVA ---
