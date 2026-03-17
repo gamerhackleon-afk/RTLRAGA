@@ -383,15 +383,19 @@ def load_sor(path):
             "DIAS_INV": ["DIAS INV TENDENCIA", "DIAS INV"]
         }
         
-        # Búsqueda dinámica de las últimas 4 semanas sin depender del nombre "S10"
+        # Columnas de sell out: T,U,V,W,X = 5 semanas históricas (X = última completa)
+        # Columna Y = S10 incompleta (solo fin de semana) — NO usar como sell out semanal
+        # Tomamos las 5 columnas antes de PEDIDOS: las primeras 4 son el histórico 4 sem,
+        # la penúltima (X) es la semana completa más reciente, la última (Y) se descarta.
         pedidos_col = find_col(df, ["# PEDIDOS", "PEDIDOS"])
         if pedidos_col:
             pedidos_idx = list(df.columns).index(pedidos_col)
-            last_4_cols = df.columns[pedidos_idx-4 : pedidos_idx]
-            for c in last_4_cols:
+            all_5_cols = df.columns[pedidos_idx-5 : pedidos_idx]   # T,U,V,W,X,Y → tomar 5
+            sem_completas = all_5_cols[:-1]                         # T,U,V,W,X (excluye Y)
+            for c in all_5_cols:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            df["SO_4SEM"] = df[last_4_cols].sum(axis=1)
-            df["SO_$"] = df[last_4_cols[-1]] # Tomamos la semana más reciente como principal
+            df["SO_4SEM"] = df[sem_completas[-4:]].sum(axis=1)      # últimas 4 completas: W+X y anteriores
+            df["SO_$"]    = df[sem_completas[-1]]                   # columna X — semana completa más reciente
         else:
             df["SO_4SEM"] = 0
             df["SO_$"] = 0
@@ -1010,7 +1014,7 @@ def _us(series) -> list:
 
 # --- 13. VISTAS ---
 def view_soriana(df_s):
-    df_s_cat = pd.read_json(categorize_full_df(df_s.to_json(), "SORIANA"))
+    df_s_cat = st.session_state.get("cat_soriana") if st.session_state.get("cat_soriana") is not None else pd.read_json(categorize_full_df(df_s.to_json(), "SORIANA"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
 
     def tog_s_rojo():
@@ -1173,7 +1177,8 @@ def view_soriana(df_s):
 
         elif st.session_state.s_dias_prod:
             st.subheader("📋 Días Inventario x Producto")
-            _base = df_s.copy()
+            # Usa dff para respetar todos los filtros activos
+            _base = dff.copy()
             _base["_DESC_CMP"] = _base["DESCRIPCION"].fillna("").str.upper().str.strip()
             res_rows = []
             for item in _SOR_DIAS_PROD:
@@ -1193,19 +1198,58 @@ def view_soriana(df_s):
             st.subheader("📅 Reporte Días Inventario")
             val_nut = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE DE SOYA NUTRIOLI BOT 850 ML")
             val_sab = get_kpi_mean(dff,"DESCRIPCION","DIAS_INV","ACEITE COMESTIBLE SABROSANO 850 ML")
-            mask_pastas = dff["DESC_NORM"].str.contains("PASTA", na=False)
-            val_pas = dff.loc[mask_pastas,"DIAS_INV"].mean() if mask_pastas.any() else 0
-            k1,k2,k3 = st.columns(3)
-            k1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 850ML</div><div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div></div>", unsafe_allow_html=True)
-            k2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sab:,.1f}</div></div>", unsafe_allow_html=True)
-            k3.markdown(f"<div class='kpi-card'><div class='kpi-title'>PASTAS</div><div class='kpi-value' style='color:#64DD17;'>{val_pas:,.1f}</div></div>", unsafe_allow_html=True)
+
+            # Desglose de los 7 códigos de pasta
+            _pastas_map = [
+                ("PASTA FIDEO NUTRIOLI 200GR",            "FIDEO NUTRIOLI 200GR"),
+                ("PASTA SPAGHETTI NUTRIOLI INTEGRAL 200GR","SPAGHETTI INTEGRAL 200GR"),
+                ("PASTA FUSILLI INTEGRAL NUTRIOLI 200GR",  "FUSILLI INTEGRAL 200GR"),
+                ("PASTA CODO NUTRIOLI VERDURAS 200GR",     "CODO VERDURAS 200GR"),
+                ("PASTA FUSILLI VERDURAS NUTRIOLI 450GR",  "FUSILLI VERDURAS 450GR"),
+                ("PASTA SPAGHETTI NUTRIOLI 200GR",         "SPAGHETTI NUTRIOLI 200GR"),
+                ("PASTA CODO NUTRIOLI 200GR",              "CODO NUTRIOLI 200GR"),
+            ]
+            _pasta_rows = ""
+            _total_pas = 0
+            for desc_full, abrev in _pastas_map:
+                _v = get_kpi_mean(dff, "DESCRIPCION", "DIAS_INV", desc_full)
+                _total_pas += _v
+                _pasta_rows += (
+                    f"<div style='display:flex;justify-content:space-between;align-items:center;"
+                    f"border-bottom:1px solid #f0f0f0;padding:1px 0;'>"
+                    f"<span style='font-size:0.62rem;color:#666;'>{abrev}</span>"
+                    f"<span style='font-size:0.75rem;font-weight:700;color:#64DD17;'>{_v:,.1f}</span>"
+                    f"</div>"
+                )
+
+            k1, k2, k3 = st.columns(3)
+            k1.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:180px;justify-content:center;'>"
+                f"<div class='kpi-title'>NUTRIOLI 850ML</div>"
+                f"<div class='kpi-value' style='color:#28a745;'>{val_nut:,.1f}</div>"
+                f"</div>", unsafe_allow_html=True)
+            k2.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:180px;justify-content:center;'>"
+                f"<div class='kpi-title'>SABROSANO 850ML</div>"
+                f"<div class='kpi-value' style='color:#E4007C;'>{val_sab:,.1f}</div>"
+                f"</div>", unsafe_allow_html=True)
+            k3.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:180px;padding:10px 12px;justify-content:center;'>"
+                f"<div class='kpi-title' style='margin-bottom:6px;'>PASTAS</div>"
+                f"{_pasta_rows}"
+                f"</div>",
+                unsafe_allow_html=True
+            )
             disp = dff[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
             disp.columns = ['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
 
         else:
-            if st.session_state.s_rojo: dff_cat=dff_cat[dff_cat['SIN_VTA']]; st.caption("📋 Vista: Sin Venta")
-            disp = dff_cat[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
+            # INV SIN VENTA usa dff para respetar todos los filtros
+            dff_vista = dff[dff['SIN_VTA']].copy() if st.session_state.s_rojo else dff.copy()
+            if st.session_state.s_rojo:
+                st.caption("📋 Vista: Sin Venta")
+            disp = dff_vista[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
             disp.columns=['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM',ascending=False)
             st.dataframe(disp.style.format({'INV CAJAS':"{:,.0f}",'SELL OUT SEM':'${:,.2f}','SELL OUT ULT 4 SEM':'${:,.2f}','DIAS INV':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
@@ -1240,7 +1284,7 @@ def view_soriana(df_s):
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
 def view_walmart(df_w):
-    df_w_cat = pd.read_json(categorize_full_df(df_w.to_json(), "WALMART"))
+    df_w_cat = st.session_state.get("cat_walmart") if st.session_state.get("cat_walmart") is not None else pd.read_json(categorize_full_df(df_w.to_json(), "WALMART"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
 
     def tog_w(target):
@@ -1448,7 +1492,7 @@ def view_walmart(df_w):
             st.dataframe(final_rank.style.format(fmt_dict), use_container_width=True, hide_index=True, height=auto_height(final_rank))
 
 def view_chedraui(df_c):
-    df_c_cat = pd.read_json(categorize_full_df(df_c.to_json(), "CHEDRAUI"))
+    df_c_cat = st.session_state.get("cat_chedraui") if st.session_state.get("cat_chedraui") is not None else pd.read_json(categorize_full_df(df_c.to_json(), "CHEDRAUI"))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
 
     def tog_c(target):
