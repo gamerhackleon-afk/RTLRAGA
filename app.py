@@ -447,15 +447,15 @@ def load_wal(path):
             "VTA_S2": ["SO - 3 P"],
             "VTA_S3": ["SO - 2 P"],
             "VTA_S4": ["SO - 1 P"],
-            "SO_SEM_ANT": ["SO - 1 $"],
-            "SO_$": ["Sell out Valor corriendo"]
+            "SO_$": ["SO - 1 $"],           # Columna CR — semana completa más reciente ✅
+            "SO_CORRIENDO": ["Sell out Valor corriendo"]  # Columna CS — parcial, no usar para sell out
         }
         
         df = validate_columns(df, "WALMART", WALMART_COLS)
         if df is None: return None 
 
         df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
-        for c in ["DIAS_INV", "EXISTENCIA", "VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4", "SO_SEM_ANT", "SO_$"]:
+        for c in ["DIAS_INV", "EXISTENCIA", "VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4", "SO_$", "SO_CORRIENDO"]:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
             
         df['PROM_PZS_MENSUAL'] = df[["VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4"]].mean(axis=1)
@@ -1482,8 +1482,8 @@ def view_walmart(df_w):
         elif st.session_state.w_nutri_top10:
             df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("NUTRIOLI",na=False)&dff_rank["DESC_NORM"].str.contains("946",na=False)]
             if not df_sub.empty:
-                final_rank = df_sub.groupby(["FORMATO","TIENDA","DESCRIPCION"])[['EXISTENCIA','SO_SEM_ANT','SO_$']].sum().reset_index()
-                final_rank.columns=["FORMATO","TIENDA","PRODUCTO","INVENTARIO","VTA SEM ANTERIOR ($)","SELL OUT ($)"]
+                final_rank = df_sub.groupby(["FORMATO","TIENDA","DESCRIPCION"])[['EXISTENCIA','SO_CORRIENDO','SO_$']].sum().reset_index()
+                final_rank.columns=["FORMATO","TIENDA","PRODUCTO","INVENTARIO","VTA CORRIENDO ($)","SELL OUT ($)"]
         if final_rank is not None:
             sort_col = final_rank.columns[-1]
             final_rank = final_rank.sort_values(by=sort_col,ascending=False)
