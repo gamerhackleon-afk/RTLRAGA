@@ -1383,6 +1383,7 @@ def view_walmart(df_w):
         elif mode=='nutrioli': st.session_state.w_nutri_top10=True
 
     if df_w is not None:
+        # EXCLUSIÓN IMPORTANTE DE BAE y MB que aplica para todo en esta vista
         df_w = df_w[~df_w["FORMATO"].isin(['BAE','MB'])]
 
         for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
@@ -1468,20 +1469,11 @@ def view_walmart(df_w):
         with c_kpi:
             st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
         with c_chart:
-            _hay_filtros_w = any([sel_store, sel_state, sel_fmt])
-            if _hay_filtros_w:
-                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-                pie_df = pie_df[pie_df['SO_$']>0]
-                if pie_df.empty:
-                    _pie_json_w = st.session_state.get("pie_base_walmart")
-                else:
-                    _pie_json_w = pie_df.to_json()
-            else:
-                _pie_json_w = st.session_state.get("pie_base_walmart")
-            if not _pie_json_w:
-                _fb = df_w_cat.dropna(subset=["Category"]).groupby("Category")["SO_$"].sum().reset_index()
-                _fb = _fb[_fb["SO_$"]>0]
-                _pie_json_w = _fb.to_json() if not _fb.empty else None
+            # 🔥 Se genera el Pie Chart SIEMPRE desde dff_cat para garantizar que excluye BAE y MB
+            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+            pie_df = pie_df[pie_df['SO_$']>0]
+            _pie_json_w = pie_df.to_json() if not pie_df.empty else None
+
             if _pie_json_w:
                 fig = build_pie_cached(_pie_json_w, "WALMART")
                 _ann = _filter_badge({"Tienda": sel_store, "Estado": sel_state, "Formato": sel_fmt}, RETAILER_COLORS["WALMART"])
@@ -1507,15 +1499,45 @@ def view_walmart(df_w):
 
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
-            val_nutri = get_kpi_mean(dff_kpi,"DESCRIPCION","DIAS_INV","NUTRIOLI ACEITE PURO DE SOYA 946 ML")
-            val_sabro = get_kpi_mean(dff_kpi,"DESCRIPCION","DIAS_INV","SABROSANO ACEITE 850ML MANTEQUILLA")
-            val_ave   = get_kpi_mean(dff_kpi,"DESCRIPCION","DIAS_INV","ACEITE AVE 850ML")
-            val_gran  = get_kpi_mean(dff_kpi,"DESCRIPCION","DIAS_INV","ACEITE COMESTIBLE GRAN TRADICION 850ML")
+            
+            def get_wal_kpi(pattern):
+                clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
+                _mask = dff_kpi["DESC_NORM"].str.contains(clean_pattern, case=False, na=False)
+                dias = safe_mean(dff_kpi.loc[_mask, "DIAS_INV"])
+                so = dff_kpi.loc[_mask, "SO_$"].sum()
+                return dias, so
+
+            val_nutri, so_nutri = get_wal_kpi("NUTRIOLI ACEITE PURO DE SOYA 946 ML")
+            val_sabro, so_sabro = get_wal_kpi("SABROSANO ACEITE 850ML MANTEQUILLA")
+            val_ave, so_ave     = get_wal_kpi("ACEITE AVE 850ML")
+            val_gran, so_gran   = get_wal_kpi("ACEITE COMESTIBLE GRAN TRADICION 850ML")
+            
             m1,m2,m3,m4 = st.columns(4)
-            m1.markdown(f"<div class='kpi-card'><div class='kpi-title'>NUTRIOLI 946M</div><div class='kpi-value' style='color:#28a745;'>{val_nutri:,.1f}</div></div>", unsafe_allow_html=True)
-            m2.markdown(f"<div class='kpi-card'><div class='kpi-title'>SABROSANO 850ML</div><div class='kpi-value' style='color:#E4007C;'>{val_sabro:,.1f}</div></div>", unsafe_allow_html=True)
-            m3.markdown(f"<div class='kpi-card'><div class='kpi-title'>AVE 850ML</div><div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div></div>", unsafe_allow_html=True)
-            m4.markdown(f"<div class='kpi-card'><div class='kpi-title'>GRAN TRADICION</div><div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div></div>", unsafe_allow_html=True)
+            m1.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
+                f"<div class='kpi-title'>NUTRIOLI 946ML</div>"
+                f"<div class='kpi-value' style='color:#28a745;'>{val_nutri:,.1f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_nutri:,.2f}</div>"
+                f"</div>", unsafe_allow_html=True)
+            m2.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
+                f"<div class='kpi-title'>SABROSANO 850ML</div>"
+                f"<div class='kpi-value' style='color:#E4007C;'>{val_sabro:,.1f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_sabro:,.2f}</div>"
+                f"</div>", unsafe_allow_html=True)
+            m3.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
+                f"<div class='kpi-title'>AVE 850ML</div>"
+                f"<div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_ave:,.2f}</div>"
+                f"</div>", unsafe_allow_html=True)
+            m4.markdown(
+                f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
+                f"<div class='kpi-title'>GRAN TRADICION</div>"
+                f"<div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_gran:,.2f}</div>"
+                f"</div>", unsafe_allow_html=True)
+            
             disp_w_dias = dff[["TIENDA","CODIGO","DESCRIPCION","DIAS_INV"]].copy()
             disp_w_dias.columns = ["TIENDA","CODIGO","DESCRIPCION","DIAS INVENTARIO"]
             st.dataframe(disp_w_dias.style.format({'DIAS INVENTARIO':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_w_dias))
