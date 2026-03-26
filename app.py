@@ -5,6 +5,7 @@ import numpy as np
 import time
 import requests
 import plotly.express as px
+import urllib.parse
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -90,6 +91,7 @@ def apply_filters(df, filter_cols, selections):
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
+    """Solo para promedios (como días inventario) de agrupaciones si fuera necesario"""
     if "DESC_NORM" in df.columns:
         clean_desc = df["DESC_NORM"]
     else:
@@ -97,6 +99,43 @@ def get_kpi_mean(df, desc_col, days_col, pattern):
     clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
     mask = clean_desc.str.contains(clean_pattern, case=False, na=False)
     return safe_mean(df.loc[mask, days_col])
+
+# --- NUEVAS FUNCIONES DE ALTA PRECISIÓN (POR UPC/DESC EXACTA) ---
+def get_kpi_sum_by_upc(df, upc, value_col="SO_$"):
+    """Calcula suma exacta usando agrupamiento por tienda para evitar duplicidad de SKU"""
+    if "CODIGO" not in df.columns:
+        return 0
+    df_upc = df[df["CODIGO"].astype(str).str.strip() == str(upc).strip()]
+    if df_upc.empty:
+        return 0
+    # Evita duplicidad por tienda
+    return df_upc.groupby(["CODIGO", "TIENDA"])[value_col].sum().sum()
+
+def get_kpi_sum_exact_desc(df, desc, value_col="SO_$"):
+    """Calcula suma exacta usando descripción completa por si no hay UPC"""
+    if "DESCRIPCION" not in df.columns:
+        return 0
+    mask = df["DESCRIPCION"].astype(str).str.strip().str.upper() == str(desc).strip().upper()
+    df_desc = df[mask]
+    if df_desc.empty:
+        return 0
+    # Evita duplicidad por tienda
+    return df_desc.groupby(["DESCRIPCION", "TIENDA"])[value_col].sum().sum()
+
+def get_kpi_mean_by_upc(df, upc, value_col="DIAS_INV"):
+    """Promedio exacto por código UPC para métricas no sumables (como Días de Inventario)"""
+    if "CODIGO" not in df.columns:
+        return 0
+    mask = df["CODIGO"].astype(str).str.strip() == str(upc).strip()
+    return safe_mean(df.loc[mask, value_col])
+
+def get_kpi_mean_exact_desc(df, desc, value_col="DIAS_INV"):
+    """Promedio exacto por descripción completa"""
+    if "DESCRIPCION" not in df.columns:
+        return 0
+    mask = df["DESCRIPCION"].astype(str).str.strip().str.upper() == str(desc).strip().upper()
+    return safe_mean(df.loc[mask, value_col])
+# ----------------------------------------------------------------
 
 def auto_height(df):
     return min(max(len(df) * 35 + 45, 100), 600)
@@ -463,6 +502,7 @@ def load_che(path):
             df = pd.read_excel(source, engine='openpyxl')
         
         CHEDRAUI_COLS = {
+            "CODIGO": ["CODIGO BARRAS", "Codigo Barras", "Codigo", "UPC"],
             "ESTADO": ["ESTADO", "Estado"],
             "COORDINADOR": ["COORDINADOR VTAS", "COORDINADOR"],
             "EJECUTIVO": ["EJECUTIVO", "Ejecutivo"],
@@ -487,10 +527,15 @@ def load_che(path):
         df = df.dropna(subset=["ARTICULO"])
         df = df[pd.to_numeric(df["NO_TIENDA"], errors='coerce').notna()]
         
+        if "CODIGO" in df.columns:
+            df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
+        else:
+            df["CODIGO"] = ""
+            
         for col in ["INV_ULT_SEM", "TRANSITO_CEDIS", "VTA_PROM_DIARIA", "DIAS_INV", "SELL_OUT"]:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
             
-        df = _str_cols(df, ["ESTADO", "COORDINADOR", "EJECUTIVO", "PROMOTOR", "CATEGORIA", "NO_TIENDA", "TIENDA", "ARTICULO"])
+        df = _str_cols(df, ["ESTADO", "COORDINADOR", "EJECUTIVO", "PROMOTOR", "CATEGORIA", "NO_TIENDA", "TIENDA", "ARTICULO", "CODIGO"])
         df["TIENDA"] = df["TIENDA"].str.strip().str.replace(r'^\d+\s+', '', regex=True).str.strip()
         df["DESC_NORM"] = df["ARTICULO"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
@@ -1383,7 +1428,6 @@ def view_walmart(df_w):
         elif mode=='nutrioli': st.session_state.w_nutri_top10=True
 
     if df_w is not None:
-        # EXCLUSIÓN IMPORTANTE DE BAE y MB que aplica para todo en esta vista
         df_w = df_w[~df_w["FORMATO"].isin(['BAE','MB'])]
 
         for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
@@ -1469,10 +1513,20 @@ def view_walmart(df_w):
         with c_kpi:
             st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
         with c_chart:
-            # 🔥 Se genera el Pie Chart SIEMPRE desde dff_cat para garantizar que excluye BAE y MB
-            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-            pie_df = pie_df[pie_df['SO_$']>0]
-            _pie_json_w = pie_df.to_json() if not pie_df.empty else None
+            _hay_filtros_w = any([sel_store, sel_state, sel_fmt])
+            if _hay_filtros_w:
+                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+                pie_df = pie_df[pie_df['SO_$']>0]
+                if pie_df.empty:
+                    _pie_json_w = st.session_state.get("pie_base_walmart")
+                else:
+                    _pie_json_w = pie_df.to_json()
+            else:
+                _fb = df_w_cat.dropna(subset=["Category"]).copy()
+                _fb = _fb.loc[_fb.index.isin(df_w.index)]
+                _fb = _fb.groupby("Category")["SO_$"].sum().reset_index()
+                _fb = _fb[_fb["SO_$"]>0]
+                _pie_json_w = _fb.to_json() if not _fb.empty else None
 
             if _pie_json_w:
                 fig = build_pie_cached(_pie_json_w, "WALMART")
@@ -1500,48 +1554,70 @@ def view_walmart(df_w):
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             
-            def get_wal_kpi(pattern):
-                clean_pattern = pattern.upper().replace("&NBSP;", "").replace(" ", "")
-                _mask = dff_kpi["DESC_NORM"].str.contains(clean_pattern, case=False, na=False)
-                dias = safe_mean(dff_kpi.loc[_mask, "DIAS_INV"])
-                so = dff_kpi.loc[_mask, "SO_$"].sum()
-                return dias, so
+            val_nutri = get_kpi_mean_by_upc(dff_kpi, "750103912014", "DIAS_INV")
+            val_sabro = get_kpi_mean_by_upc(dff_kpi, "750103912209", "DIAS_INV")
+            val_ave   = get_kpi_mean_exact_desc(dff_kpi, "ACEITE AVE 850ML", "DIAS_INV")
+            val_gran  = get_kpi_mean_exact_desc(dff_kpi, "ACEITE COMESTIBLE GRAN TRADICION 850ML", "DIAS_INV")
 
-            val_nutri, so_nutri = get_wal_kpi("NUTRIOLI ACEITE PURO DE SOYA 946 ML")
-            val_sabro, so_sabro = get_wal_kpi("SABROSANO ACEITE 850ML MANTEQUILLA")
-            val_ave, so_ave     = get_wal_kpi("ACEITE AVE 850ML")
-            val_gran, so_gran   = get_wal_kpi("ACEITE COMESTIBLE GRAN TRADICION 850ML")
+            so_nutri = get_kpi_sum_by_upc(dff_kpi, "750103912014", "SO_$")
+            so_sabro = get_kpi_sum_by_upc(dff_kpi, "750103912209", "SO_$")
+            so_ave   = get_kpi_sum_exact_desc(dff_kpi, "ACEITE AVE 850ML", "SO_$")
+            so_gran  = get_kpi_sum_exact_desc(dff_kpi, "ACEITE COMESTIBLE GRAN TRADICION 850ML", "SO_$")
             
             m1,m2,m3,m4 = st.columns(4)
             m1.markdown(
                 f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
                 f"<div class='kpi-title'>NUTRIOLI 946ML</div>"
                 f"<div class='kpi-value' style='color:#28a745;'>{val_nutri:,.1f}</div>"
-                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_nutri:,.2f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_nutri:,.0f}</div>"
                 f"</div>", unsafe_allow_html=True)
             m2.markdown(
                 f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
                 f"<div class='kpi-title'>SABROSANO 850ML</div>"
                 f"<div class='kpi-value' style='color:#E4007C;'>{val_sabro:,.1f}</div>"
-                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_sabro:,.2f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_sabro:,.0f}</div>"
                 f"</div>", unsafe_allow_html=True)
             m3.markdown(
                 f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
                 f"<div class='kpi-title'>AVE 850ML</div>"
                 f"<div class='kpi-value' style='color:#D32F2F;'>{val_ave:,.1f}</div>"
-                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_ave:,.2f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_ave:,.0f}</div>"
                 f"</div>", unsafe_allow_html=True)
             m4.markdown(
                 f"<div class='kpi-card' style='height:100%;min-height:240px;justify-content:center;'>"
                 f"<div class='kpi-title'>GRAN TRADICION</div>"
                 f"<div class='kpi-value' style='color:#8B4513;'>{val_gran:,.1f}</div>"
-                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_gran:,.2f}</div>"
+                f"<div style='font-size:0.75rem;color:#555;margin-top:6px;font-weight:600;'>${so_gran:,.0f}</div>"
                 f"</div>", unsafe_allow_html=True)
             
             disp_w_dias = dff[["TIENDA","CODIGO","DESCRIPCION","DIAS_INV"]].copy()
             disp_w_dias.columns = ["TIENDA","CODIGO","DESCRIPCION","DIAS INVENTARIO"]
             st.dataframe(disp_w_dias.style.format({'DIAS INVENTARIO':"{:,.1f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_w_dias))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_w_dias), file_name="Walmart_Reporte_Dias.xlsx", use_container_width=True)
+
+        elif st.session_state.w_neg:
+            st.subheader("📉 Vista: Inventarios Negativos")
+            disp_neg = dff[["CODIGO", "DESCRIPCION", "TIENDA", "EXISTENCIA", "SO_$"]].copy()
+            disp_neg.columns = ["CODIGO", "DESCRIPCION", "TIENDA", "INVENTARIO", "SELL OUT"]
+            disp_neg = disp_neg.sort_values(by="INVENTARIO", ascending=True)
+            st.dataframe(disp_neg.style.format({'INVENTARIO':"{:,.0f}", 'SELL OUT':'${:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
+            
+            # --- Botones de Descarga y WhatsApp (Walmart) ---
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
+                st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Walmart_Negativos.xlsx", use_container_width=True)
+            with c_btn2:
+                msg_lines = ["*🚨 INVENTARIOS NEGATIVOS WALMART*"]
+                max_items = 50
+                for idx, row in enumerate(disp_neg.itertuples()):
+                    if idx >= max_items:
+                        msg_lines.append("\n_... (Mostrando los primeros 50 registros)_")
+                        break
+                    msg_lines.append(f"🔢 *CÓDIGO:* {row.CODIGO}\n📦 *DESCRIPCIÓN:* {row.DESCRIPCION}\n🏪 *TIENDA:* {row.TIENDA}\n📉 *INVENTARIO:* {row.INVENTARIO}\n")
+                
+                wa_text = "\n".join(msg_lines)
+                wa_url = f"https://wa.me/?text={urllib.parse.quote(wa_text)}"
+                st.markdown(f'<a href="{wa_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; background-color: #25D366; color: white; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-weight: 800; font-family: sans-serif; height: 42px; margin-top: 0px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📲 ENVIAR POR WHATSAPP</a>', unsafe_allow_html=True)
 
         else:
             disp=dff_cat[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
@@ -1791,10 +1867,28 @@ def view_chedraui(df_c):
         elif st.session_state.c_neg_zero:
             dff_neg = dff[dff["INV_ULT_SEM"]<0].copy()
             st.subheader("📉 Vista: Inventarios Negativos")
-            disp_neg = dff_neg[["ESTADO","COORDINADOR","EJECUTIVO","PROMOTOR","CATEGORIA","NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM"]].copy()
-            disp_neg.columns=["ESTADO","Coordinador","Ejecutivo","Promotor","Categoria","No de tienda","Tienda","articulo","Inventario 06 Mar 2026"]
-            st.dataframe(disp_neg.style.format({'Inventario 06 Mar 2026':"{:,.0f}"}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
-            st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Chedraui_Negativos.xlsx", use_container_width=True)
+            # Ajustado explícitamente para las columnas solicitadas en Chedraui
+            disp_neg = dff_neg[["CODIGO", "ARTICULO", "TIENDA", "INV_ULT_SEM", "SELL_OUT"]].copy()
+            disp_neg.columns = ["CODIGO", "DESCRIPCION", "TIENDA", "INVENTARIO", "SELL OUT"]
+            disp_neg = disp_neg.sort_values(by="INVENTARIO", ascending=True)
+            st.dataframe(disp_neg.style.format({'INVENTARIO':"{:,.0f}", 'SELL OUT':'${:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
+            
+            # --- Botones de Descarga y WhatsApp (Chedraui) ---
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1:
+                st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Chedraui_Negativos.xlsx", use_container_width=True)
+            with c_btn2:
+                msg_lines = ["*🚨 INVENTARIOS NEGATIVOS CHEDRAUI*"]
+                max_items = 50
+                for idx, row in enumerate(disp_neg.itertuples()):
+                    if idx >= max_items:
+                        msg_lines.append("\n_... (Mostrando los primeros 50 registros)_")
+                        break
+                    msg_lines.append(f"🏪 *Tienda:* {row.TIENDA}\n🔢 *CÓDIGO:* {row.CODIGO}\n📦 *DESCRIPCIÓN:* {row.DESCRIPCION}\n📉 *Inventario:* {row.INVENTARIO}\n")
+                
+                wa_text = "\n".join(msg_lines)
+                wa_url = f"https://wa.me/?text={urllib.parse.quote(wa_text)}"
+                st.markdown(f'<a href="{wa_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; background-color: #25D366; color: white; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-weight: 800; font-family: sans-serif; height: 42px; margin-top: 0px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📲 ENVIAR POR WHATSAPP</a>', unsafe_allow_html=True)
 
         else:
             st.caption("📋 Vista: Completa")
