@@ -204,7 +204,7 @@ def _categorize_df(df_json: str, retailer: str) -> str:
             desc.str.contains("SABROSANO",na=False), desc.str.contains("GRANTRADICION",na=False),
             desc.str.contains("BALSAMICO",na=False), desc.str.contains("MISAZON|MISAZÓN",na=False),
             desc.str.contains("AVE",na=False) & ~desc.str.contains("NUTRIOLI",na=False),
-            desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("PASTA|FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
+            desc.str.contains("PASTA|FUSILLI|SPAGUETTI|SPAGHETTI|FIDEO|CODO|PPS|MACARRON",na=False),
             desc.str.contains("OLI",na=False) & desc.str.contains("OLIVA|EV|AEROSOL|ADEREZO",na=False),
             desc.str.contains("NUTRIOLI",na=False) & desc.str.contains("400ML|850ML",na=False) & ~desc.str.contains("PROTECT|DEFENSAS",na=False),
             desc.str.contains("NUTRIOLI",na=False),
@@ -220,7 +220,7 @@ def _categorize_df(df_json: str, retailer: str) -> str:
             desc.str.contains("GRANTRADICION",na=False),
             desc.str.contains("BALSAMICO",na=False),
             (desc.str.contains("OLISPRAY|OLICOCINA|OLIDENUTEV|ACEITEOLIDEOLIVA|OLIDENUT",na=False))&~desc.str.contains("BALSAMICO",na=False),
-            desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("SPAGUETTI|FIDEO|CODO|PASTA",na=False),
+            desc.str.contains("PASTA|FUSILLI|SPAGUETTI|SPAGHETTI|FIDEO|CODO|PPS|MACARRON",na=False),
             desc.str.contains("NUTRIOLI",na=False),
         ]
         choices = ["BORGES","NUTRIOLI","SABROSANO","GT","BALSAMICO","OLIVAS","PASTAS","REST NUTRIOLI"]
@@ -232,7 +232,7 @@ def _categorize_df(df_json: str, retailer: str) -> str:
             desc.str.contains("GRANTRADICION",na=False),
             desc.str.contains("MISAZON|MISAZÓN",na=False),
             desc.str.contains("AVE",na=False)&desc.str.contains("SOYA-CANOLA|AEROSOL",na=False),
-            desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("FUSILLI|SPAGUETTI|FIDEO|CODO",na=False),
+            desc.str.contains("PASTA|FUSILLI|SPAGUETTI|SPAGHETTI|FIDEO|CODO|PPS|MACARRON",na=False),
             desc.str.contains("OLI",na=False)&desc.str.contains("OLIVA|EV|AEROSOL",na=False),
             desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("400ML|850ML",na=False)&~desc.str.contains("PROTECT|DEFENSAS",na=False),
             desc.str.contains("NUTRIOLI",na=False),
@@ -1428,6 +1428,7 @@ def view_walmart(df_w):
         elif mode=='nutrioli': st.session_state.w_nutri_top10=True
 
     if df_w is not None:
+        # EXCLUSIÓN IMPORTANTE DE BAE y MB que aplica para todo en esta vista
         df_w = df_w[~df_w["FORMATO"].isin(['BAE','MB'])]
 
         for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
@@ -1513,20 +1514,10 @@ def view_walmart(df_w):
         with c_kpi:
             st.markdown(f"<div class='kpi-card' style='height:450px;'><div class='kpi-title'>Total Sell Out</div><div class='kpi-value' style='color:#28a745;'>${total_so:,.2f}</div></div>", unsafe_allow_html=True)
         with c_chart:
-            _hay_filtros_w = any([sel_store, sel_state, sel_fmt])
-            if _hay_filtros_w:
-                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
-                pie_df = pie_df[pie_df['SO_$']>0]
-                if pie_df.empty:
-                    _pie_json_w = st.session_state.get("pie_base_walmart")
-                else:
-                    _pie_json_w = pie_df.to_json()
-            else:
-                _fb = df_w_cat.dropna(subset=["Category"]).copy()
-                _fb = _fb.loc[_fb.index.isin(df_w.index)]
-                _fb = _fb.groupby("Category")["SO_$"].sum().reset_index()
-                _fb = _fb[_fb["SO_$"]>0]
-                _pie_json_w = _fb.to_json() if not _fb.empty else None
+            # 🔥 Se genera el Pie Chart SIEMPRE desde dff_cat para garantizar que excluye BAE y MB
+            pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+            pie_df = pie_df[pie_df['SO_$']>0]
+            _pie_json_w = pie_df.to_json() if not pie_df.empty else None
 
             if _pie_json_w:
                 fig = build_pie_cached(_pie_json_w, "WALMART")
@@ -1602,7 +1593,6 @@ def view_walmart(df_w):
             disp_neg = disp_neg.sort_values(by="INVENTARIO", ascending=True)
             st.dataframe(disp_neg.style.format({'INVENTARIO':"{:,.0f}", 'SELL OUT':'${:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
             
-            # --- Botones de Descarga y WhatsApp (Walmart) ---
             c_btn1, c_btn2 = st.columns(2)
             with c_btn1:
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Walmart_Negativos.xlsx", use_container_width=True)
@@ -1620,7 +1610,6 @@ def view_walmart(df_w):
                 st.markdown(f'<a href="{wa_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; background-color: #25D366; color: white; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-weight: 800; font-family: sans-serif; height: 42px; margin-top: 0px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📲 ENVIAR POR WHATSAPP</a>', unsafe_allow_html=True)
 
         else:
-            st.caption("📋 Vista: Completa")
             disp=dff[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
@@ -1818,7 +1807,8 @@ def view_chedraui(df_c):
             _so_pastas_total_c = 0
             
             for sku, abrev in _pastas_che:
-                _mask_p = dff_base["ARTICULO"].astype(str).str.contains(sku, na=False)
+                abrev_clean = abrev.upper().replace(" ", "")
+                _mask_p = dff_base["ARTICULO"].astype(str).str.contains(sku, na=False) | dff_base["DESC_NORM"].str.contains(abrev_clean, case=False, na=False)
                 _v = safe_mean(dff_base.loc[_mask_p, "DIAS_INV"])
                 _so_p   = dff_base.loc[_mask_p, "SELL_OUT"].sum()
                 _so_pastas_total_c += _so_p
@@ -1868,13 +1858,11 @@ def view_chedraui(df_c):
         elif st.session_state.c_neg_zero:
             dff_neg = dff[dff["INV_ULT_SEM"]<0].copy()
             st.subheader("📉 Vista: Inventarios Negativos")
-            # Ajustado explícitamente para las columnas solicitadas en Chedraui
             disp_neg = dff_neg[["CODIGO", "ARTICULO", "TIENDA", "INV_ULT_SEM", "SELL_OUT"]].copy()
             disp_neg.columns = ["CODIGO", "DESCRIPCION", "TIENDA", "INVENTARIO", "SELL OUT"]
             disp_neg = disp_neg.sort_values(by="INVENTARIO", ascending=True)
             st.dataframe(disp_neg.style.format({'INVENTARIO':"{:,.0f}", 'SELL OUT':'${:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
             
-            # --- Botones de Descarga y WhatsApp (Chedraui) ---
             c_btn1, c_btn2 = st.columns(2)
             with c_btn1:
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp_neg), file_name="Chedraui_Negativos.xlsx", use_container_width=True)
