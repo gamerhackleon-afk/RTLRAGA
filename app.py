@@ -440,6 +440,14 @@ def load_sor(path):
         df["TIENDA"] = df["TIENDA"].str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         df["ESTADO"] = df["ESTADO"].str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         
+        # UNIFICACIÓN DE TIENDAS POR NÚMERO DE SUCURSAL
+        if "NO_TIENDA" in df.columns:
+            tienda_map = df.groupby("NO_TIENDA")["TIENDA"].first().to_dict()
+            df["TIENDA"] = df["NO_TIENDA"].map(tienda_map).fillna(df["TIENDA"])
+            
+            estado_map = df.groupby("NO_TIENDA")["ESTADO"].first().to_dict()
+            df["ESTADO"] = df["NO_TIENDA"].map(estado_map).fillna(df["ESTADO"])
+            
         df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
     except Exception as e:
@@ -552,6 +560,14 @@ def load_che(path):
         df["TIENDA"] = df["TIENDA"].str.replace(r'^\d+\s+', '', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         df["ESTADO"] = df["ESTADO"].str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         
+        # UNIFICACIÓN DE TIENDAS POR NÚMERO DE SUCURSAL
+        if "NO_TIENDA" in df.columns:
+            tienda_map = df.groupby("NO_TIENDA")["TIENDA"].first().to_dict()
+            df["TIENDA"] = df["NO_TIENDA"].map(tienda_map).fillna(df["TIENDA"])
+            
+            estado_map = df.groupby("NO_TIENDA")["ESTADO"].first().to_dict()
+            df["ESTADO"] = df["NO_TIENDA"].map(estado_map).fillna(df["ESTADO"])
+
         df["DESC_NORM"] = df["ARTICULO"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
     except Exception as e:
@@ -1884,7 +1900,7 @@ def view_chedraui(df_c):
             dff_neg = dff[dff["INV_ULT_SEM"]<0].copy()
             st.subheader("📉 Vista: Inventarios Negativos")
             disp_neg = dff_neg[["CODIGO", "ARTICULO", "TIENDA", "INV_ULT_SEM", "SELL_OUT"]].copy()
-            disp_neg.columns = ["CODIGO", "DESCRIPCION", "TIENDA", "INVENTARIO", "SELL OUT"]
+            disp_neg.columns = ["CODIGO", "DESCRripcion", "TIENDA", "INVENTARIO", "SELL OUT"]
             disp_neg = disp_neg.sort_values(by="INVENTARIO", ascending=True)
             st.dataframe(disp_neg.style.format({'INVENTARIO':"{:,.0f}", 'SELL OUT':'${:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
             
