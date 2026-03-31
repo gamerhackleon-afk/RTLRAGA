@@ -244,6 +244,10 @@ def _categorize_df(df_json: str, retailer: str) -> str:
     return df.to_json()
 
 @st.cache_data(show_spinner=False, ttl=14400)
+def categorize_full_df(df_json: str, retailer: str) -> str:
+    return _categorize_df(df_json, retailer)
+
+@st.cache_data(show_spinner=False, ttl=14400)
 def build_pie_cached(pie_df_json: str, retailer: str):
     COLORS = {
         "SORIANA":  (["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"],
@@ -1439,6 +1443,9 @@ def view_walmart(df_w):
         elif mode=='nutrioli': st.session_state.w_nutri_top10=True
 
     if df_w is not None:
+        # EXCLUSIÓN IMPORTANTE DE BAE y MB que aplica para todo en esta vista
+        df_w = df_w[~df_w["FORMATO"].isin(['BAE','MB'])]
+
         for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
             if _k not in st.session_state:
                 st.session_state[_k] = []
@@ -1531,11 +1538,12 @@ def view_walmart(df_w):
                 else:
                     _pie_json_w = pie_df.to_json()
             else:
-                _pie_json_w = st.session_state.get("pie_base_walmart")
-            if not _pie_json_w:
-                _fb = df_w_cat.dropna(subset=["Category"]).groupby("Category")["SO_$"].sum().reset_index()
+                _fb = df_w_cat.dropna(subset=["Category"]).copy()
+                _fb = _fb.loc[_fb.index.isin(df_w.index)]
+                _fb = _fb.groupby("Category")["SO_$"].sum().reset_index()
                 _fb = _fb[_fb["SO_$"]>0]
                 _pie_json_w = _fb.to_json() if not _fb.empty else None
+
             if _pie_json_w:
                 fig = build_pie_cached(_pie_json_w, "WALMART")
                 _ann = _filter_badge({"Tienda": sel_store, "Estado": sel_state, "Formato": sel_fmt}, RETAILER_COLORS["WALMART"])
@@ -1627,7 +1635,6 @@ def view_walmart(df_w):
                 st.markdown(f'<a href="{wa_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; background-color: #25D366; color: white; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-weight: 800; font-family: sans-serif; height: 42px; margin-top: 0px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📲 ENVIAR POR WHATSAPP</a>', unsafe_allow_html=True)
 
         else:
-            st.caption("📋 Vista: Completa")
             disp=dff[["CODIGO","DESCRIPCION","TIENDA","EXISTENCIA","SO_$","PROM_PZS_MENSUAL"]].copy()
             disp.columns=['CODIGO','DESCRIPCION','TIENDA','EXISTENCIA','SELL OUT','PROM PZS MENSUAL']
             st.dataframe(disp.style.format({'SELL OUT':'${:,.2f}','PROM PZS MENSUAL':'{:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp))
