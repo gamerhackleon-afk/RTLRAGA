@@ -6,7 +6,7 @@ import time
 import requests
 import plotly.express as px
 import urllib.parse
-from io import BytesIO
+from io import BytesIO, StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Eliminar límite de celdas del Styler de Pandas — evita error con tablas grandes
@@ -174,7 +174,7 @@ def convert_df_to_excel(df):
 @st.cache_data(show_spinner=False, ttl=14400)
 def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
     import json
-    pie_df = pd.read_json(pie_df_json)
+    pie_df = pd.read_json(StringIO(pie_df_json))
     fig = px.pie(
         pie_df, values=val_col, names='Category',
         color='Category', color_discrete_map=dict(zip(domain, range_)), hole=0.45
@@ -193,7 +193,7 @@ def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
 
 @st.cache_data(show_spinner=False, ttl=14400)
 def _categorize_df(df_json: str, retailer: str) -> str:
-    df = pd.read_json(df_json)
+    df = pd.read_json(StringIO(df_json))
 
     def _safe_str(series):
         return series.fillna("").astype(str).str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
@@ -265,7 +265,7 @@ def build_pie_cached(pie_df_json: str, retailer: str):
 
 @st.cache_data(show_spinner=False, ttl=14400)
 def precompute_pie_base(df_cat_json: str, retailer: str) -> str:
-    df = pd.read_json(df_cat_json)
+    df = pd.read_json(StringIO(df_cat_json))
     if "Category" not in df.columns:
         return None
     val_col = "SELL_OUT" if retailer == "CHEDRAUI" else "SO_$"
@@ -440,14 +440,6 @@ def load_sor(path):
         df["TIENDA"] = df["TIENDA"].str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         df["ESTADO"] = df["ESTADO"].str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         
-        # UNIFICACIÓN DE TIENDAS POR NÚMERO DE SUCURSAL
-        if "NO_TIENDA" in df.columns:
-            tienda_map = df.groupby("NO_TIENDA")["TIENDA"].first().to_dict()
-            df["TIENDA"] = df["NO_TIENDA"].map(tienda_map).fillna(df["TIENDA"])
-            
-            estado_map = df.groupby("NO_TIENDA")["ESTADO"].first().to_dict()
-            df["ESTADO"] = df["NO_TIENDA"].map(estado_map).fillna(df["ESTADO"])
-            
         df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
     except Exception as e:
@@ -1061,7 +1053,7 @@ if not st.session_state.data_loaded:
             _pie_key = f"pie_base_{_rk.lower()}"
             if _cat_key not in st.session_state:
                 _cat_json = categorize_full_df(_df_pre.to_json(), _rk) 
-                st.session_state[_cat_key] = pd.read_json(_cat_json)
+                st.session_state[_cat_key] = pd.read_json(StringIO(_cat_json))
             else:
                 _cat_json = None 
             if _pie_key not in st.session_state:
@@ -1132,7 +1124,7 @@ def _us(series) -> list:
 
 # --- 13. VISTAS ---
 def view_soriana(df_s):
-    df_s_cat = st.session_state.get("cat_soriana") if st.session_state.get("cat_soriana") is not None else pd.read_json(categorize_full_df(df_s.to_json(), "SORIANA"))
+    df_s_cat = st.session_state.get("cat_soriana") if st.session_state.get("cat_soriana") is not None else pd.read_json(StringIO(categorize_full_df(df_s.to_json(), "SORIANA")))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
 
     def tog_s_rojo():
@@ -1445,7 +1437,7 @@ def view_soriana(df_s):
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
 def view_walmart(df_w):
-    df_w_cat = st.session_state.get("cat_walmart") if st.session_state.get("cat_walmart") is not None else pd.read_json(categorize_full_df(df_w.to_json(), "WALMART"))
+    df_w_cat = st.session_state.get("cat_walmart") if st.session_state.get("cat_walmart") is not None else pd.read_json(StringIO(categorize_full_df(df_w.to_json(), "WALMART")))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
 
     def tog_w(target):
@@ -1586,11 +1578,13 @@ def view_walmart(df_w):
         elif st.session_state.w_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
             
+            # 1. Días de Inventario Promedio (Cálculo exacto para no mezclar)
             val_nutri = get_kpi_mean_by_upc(dff_kpi, "750103912014", "DIAS_INV")
             val_sabro = get_kpi_mean_by_upc(dff_kpi, "750103912209", "DIAS_INV")
             val_ave   = get_kpi_mean_exact_desc(dff_kpi, "ACEITE AVE 850ML", "DIAS_INV")
             val_gran  = get_kpi_mean_exact_desc(dff_kpi, "ACEITE COMESTIBLE GRAN TRADICION 850ML", "DIAS_INV")
 
+            # 2. Sell Out (Suma exacta por UPC/Desc en columna SO_$)
             so_nutri = get_kpi_sum_by_upc(dff_kpi, "750103912014", "SO_$")
             so_sabro = get_kpi_sum_by_upc(dff_kpi, "750103912209", "SO_$")
             so_ave   = get_kpi_sum_exact_desc(dff_kpi, "ACEITE AVE 850ML", "SO_$")
@@ -1691,7 +1685,7 @@ def view_walmart(df_w):
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
 def view_chedraui(df_c):
-    df_c_cat = st.session_state.get("cat_chedraui") if st.session_state.get("cat_chedraui") is not None else pd.read_json(categorize_full_df(df_c.to_json(), "CHEDRAUI"))
+    df_c_cat = st.session_state.get("cat_chedraui") if st.session_state.get("cat_chedraui") is not None else pd.read_json(StringIO(categorize_full_df(df_c.to_json(), "CHEDRAUI")))
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
 
     def tog_c(target):
@@ -1900,7 +1894,7 @@ def view_chedraui(df_c):
             dff_neg = dff[dff["INV_ULT_SEM"]<0].copy()
             st.subheader("📉 Vista: Inventarios Negativos")
             disp_neg = dff_neg[["CODIGO", "ARTICULO", "TIENDA", "INV_ULT_SEM", "SELL_OUT"]].copy()
-            disp_neg.columns = ["CODIGO", "DESCRripcion", "TIENDA", "INVENTARIO", "SELL OUT"]
+            disp_neg.columns = ["CODIGO", "DESCRIPCION", "TIENDA", "INVENTARIO", "SELL OUT"]
             disp_neg = disp_neg.sort_values(by="INVENTARIO", ascending=True)
             st.dataframe(disp_neg.style.format({'INVENTARIO':"{:,.0f}", 'SELL OUT':'${:,.2f}'}), use_container_width=True, hide_index=True, height=auto_height(disp_neg))
             
