@@ -1046,33 +1046,21 @@ if not st.session_state.data_loaded:
 
     try:
         for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
-            _df_pre = st.session_state.get(_ss)
+            _df_pre = _get_cached_df(_rk)   # Leer desde cache_data, no session_state
             if _df_pre is None:
                 continue
-            _cat_key = f"cat_{_rk.lower()}"
             _pie_key = f"pie_base_{_rk.lower()}"
-            if _cat_key not in st.session_state:
-                _cat_json = categorize_full_df(_df_pre.to_json(), _rk) 
-                st.session_state[_cat_key] = pd.read_json(StringIO(_cat_json))
-            else:
-                _cat_json = None 
+            # cat_ NO se guarda en session_state — vive en @st.cache_data (ahorra ~60% RAM)
             if _pie_key not in st.session_state:
-                _pie_src = _cat_json if _cat_json is not None else st.session_state[_cat_key].to_json()
-                _pie_json = precompute_pie_base(_pie_src, _rk)
+                _cat_json = categorize_full_df(_df_pre.to_json(), _rk)
+                _pie_json = precompute_pie_base(_cat_json, _rk)
                 if _pie_json:
-                    st.session_state[_pie_key] = _pie_json
+                    st.session_state[_pie_key] = _pie_json  # Solo JSON pequeño del groupby
     except Exception:
         pass
 
 else:
-    for k, ss_key in _df_map.items():
-        if st.session_state.get(ss_key) is None:
-            try:
-                _df = _get_cached_df(k)
-                if _df is not None:
-                    st.session_state[ss_key] = _df
-            except Exception:
-                pass
+    pass  # DataFrames viven en @st.cache_data — no se duplican en session_state
 
 if st.session_state.load_errors:
     for k, err in st.session_state.load_errors.items():
@@ -1092,14 +1080,10 @@ def get_cached_or_upload(key, uploader_key, load_func):
     df_key_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
     ss_key = df_key_map[key]
 
-    df = st.session_state.get(ss_key)
-    if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-        return df
-
+    # Leer desde @st.cache_data — no duplicar DataFrame en session_state
     try:
         df = _get_cached_df(key)
         if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-            st.session_state[ss_key] = df 
             return df
     except Exception:
         pass
@@ -1109,8 +1093,6 @@ def get_cached_or_upload(key, uploader_key, load_func):
     if f:
         with st.spinner(f"Procesando {key}..."):
             df = load_func(f)
-        if df is not None:
-            st.session_state[ss_key] = df
         return df
     return None
 
@@ -1124,7 +1106,7 @@ def _us(series) -> list:
 
 # --- 13. VISTAS ---
 def view_soriana(df_s):
-    df_s_cat = st.session_state.get("cat_soriana") if st.session_state.get("cat_soriana") is not None else pd.read_json(StringIO(categorize_full_df(df_s.to_json(), "SORIANA")))
+    df_s_cat = pd.read_json(StringIO(categorize_full_df(df_s.to_json(), "SORIANA")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
 
     def tog_s_rojo():
@@ -1437,7 +1419,7 @@ def view_soriana(df_s):
             else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
 
 def view_walmart(df_w):
-    df_w_cat = st.session_state.get("cat_walmart") if st.session_state.get("cat_walmart") is not None else pd.read_json(StringIO(categorize_full_df(df_w.to_json(), "WALMART")))
+    df_w_cat = pd.read_json(StringIO(categorize_full_df(df_w.to_json(), "WALMART")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
 
     def tog_w(target):
@@ -1685,7 +1667,7 @@ def view_walmart(df_w):
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
 def view_chedraui(df_c):
-    df_c_cat = st.session_state.get("cat_chedraui") if st.session_state.get("cat_chedraui") is not None else pd.read_json(StringIO(categorize_full_df(df_c.to_json(), "CHEDRAUI")))
+    df_c_cat = pd.read_json(StringIO(categorize_full_df(df_c.to_json(), "CHEDRAUI")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
 
     def tog_c(target):
