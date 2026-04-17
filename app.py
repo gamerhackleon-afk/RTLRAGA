@@ -87,7 +87,9 @@ def apply_filters(df, filter_cols, selections):
     mask = np.ones(len(df), dtype=bool)
     for col, sel in zip(filter_cols, selections):
         if sel and col in df.columns:
-            mask &= df[col].isin(set(sel)).values  
+            col_vals = df[col].astype(str).str.strip().str.upper()
+            sel_vals = {str(s).strip().upper() for s in sel}
+            mask &= col_vals.isin(sel_vals).values
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
@@ -395,7 +397,7 @@ def load_sor(path):
             "DESCRIPCION": ["Descripción", "Descripcion"],
             "NO_TIENDA": ["No tienda", "No. Tienda", "# Tienda"],
             "TIENDA": ["Nombre Tienda", "Tienda"],
-            "CIUDAD": ["Ciudad"],
+            "CIUDAD": ["Ciudad", "CIUDAD", "Municipio", "MUNICIPIO", "City"],
             "ESTADO": ["Estado"],
             "FORMATO": ["Formato"],
             "PEDIDOS": ["# PEDIDOS", "PEDIDOS"],
@@ -422,10 +424,20 @@ def load_sor(path):
             
         SORIANA_COLS["SO_$"] = ["SO_$"]
         SORIANA_COLS["SO_4SEM"] = ["SO_4SEM"]
-        
+
+        # Guardar columna 7 (Ciudad) por índice antes de renombrar
+        _ciudad_idx = df.iloc[:, 7].copy() if len(df.columns) > 7 else None
+
         df = validate_columns(df, "SORIANA", SORIANA_COLS)
         if df is None: return None
-        
+
+        # Si CIUDAD quedó con valores iguales a TIENDA, usar columna por índice
+        if _ciudad_idx is not None:
+            _ciu_str = _ciudad_idx.fillna("").astype(str).str.strip().str.upper()
+            _tda_str = df["TIENDA"].fillna("").astype(str).str.strip().str.upper()
+            if (_ciu_str == _tda_str).mean() > 0.5:
+                df["CIUDAD"] = _ciu_str
+
         df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
         for c in ["DIAS_INV", "INV_CAJAS", "PROM_SEM_CAJAS", "SO_$", "SO_4SEM", "PEDIDOS", "CANTIDAD_PZS"]:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
@@ -576,6 +588,19 @@ def _get_cached_df(key: str) -> pd.DataFrame | None:
         return df
     except Exception:
         return None
+
+def _get_df_with_fallback(key: str) -> "pd.DataFrame | None":
+    try:
+        df = _get_cached_df(key)
+        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
+            st.session_state[f"_backup_{key}"] = df
+            return df
+    except Exception:
+        pass
+    backup = st.session_state.get(f"_backup_{key}")
+    if backup is not None and isinstance(backup, pd.DataFrame) and not backup.empty:
+        return backup
+    return None
 
 # ══════════════════════════════════════════════════════════════════════
 # LISTAS DE PRODUCTOS
@@ -1043,10 +1068,18 @@ if not st.session_state.data_loaded:
 
     else:
         st.session_state.data_loaded = True
+        _recovered = 0
+        for _rk in ["SORIANA", "WALMART", "CHEDRAUI"]:
+            if _get_df_with_fallback(_rk) is not None:
+                _recovered += 1
+        if _recovered == 0:
+            st.warning("⚠️ Sin conexión y sin datos en caché.")
+        else:
+            st.info(f"📴 Modo OFFLINE — usando datos en caché ({_recovered}/3 bases disponibles)")
 
     try:
         for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
-            _df_pre = _get_cached_df(_rk)   # Leer desde cache_data, no session_state
+            _df_pre = _get_df_with_fallback(_rk)
             if _df_pre is None:
                 continue
             _pie_key = f"pie_base_{_rk.lower()}"
@@ -1080,9 +1113,9 @@ def get_cached_or_upload(key, uploader_key, load_func):
     df_key_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
     ss_key = df_key_map[key]
 
-    # Leer desde @st.cache_data — no duplicar DataFrame en session_state
+    # Leer desde @st.cache_data con fallback offline
     try:
-        df = _get_cached_df(key)
+        df = _get_df_with_fallback(key)
         if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
             return df
     except Exception:
@@ -1155,22 +1188,53 @@ def view_soriana(df_s):
 
         def _on_edo_change():
             if st.session_state.get("s_fil_nda"):
-                return 
+                return
             edo = st.session_state.get("s_fil_edo", [])
+            if edo:
+                _t = df_s[df_s["ESTADO"].isin(edo)]
+                _ciudades = _t["CIUDAD"].dropna().unique()
+                _nombres  = set(_t["TIENDA"].dropna().str.strip().str.upper())
+                _ciudades_limpias = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
+                st.session_state["s_fil_cd"]  = sorted(_ciudades_limpias) if _ciudades_limpias else sorted(_ciudades)
+                st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
+            else:
+                st.session_state["s_fil_cd"]  = []
+                st.session_state["s_fil_fmt"] = []
             st.session_state["s_fil_nom"] = []
-            st.session_state["s_fil_cd"]  = []
-            st.session_state["s_fil_fmt"] = []
+            st.session_state["s_fil_nda"] = []
 
         def _on_nom_change():
             if st.session_state.get("s_fil_nda"):
-                return 
+                return
             nom = st.session_state.get("s_fil_nom", [])
             if nom:
                 _t = df_s[df_s["TIENDA"].isin(nom)]
-                st.session_state["s_fil_nda"] = list(_t["NO_TIENDA"].dropna().unique())
+                st.session_state["s_fil_nda"] = sorted(_t["NO_TIENDA"].dropna().unique())
+                st.session_state["s_fil_edo"] = sorted(_t["ESTADO"].dropna().unique())
+                _ciudades = _t["CIUDAD"].dropna().unique()
+                _nombres  = set(_t["TIENDA"].dropna().str.strip().str.upper())
+                _ciudades_limpias = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
+                st.session_state["s_fil_cd"]  = sorted(_ciudades_limpias) if _ciudades_limpias else sorted(_ciudades)
+                st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
+            else:
+                st.session_state["s_fil_nda"] = []
+                st.session_state["s_fil_edo"] = []
+                st.session_state["s_fil_cd"]  = []
+                st.session_state["s_fil_fmt"] = []
+
+        def _reset_sor_filters():
+            for _k in ["s_fil_nda","s_fil_edo","s_fil_nom","s_fil_cd","s_fil_fmt"]:
+                st.session_state[_k] = []
+
+        _rc1, _rc2 = st.columns([8, 2])
+        with _rc1:
+            st.markdown("#### 🔍 Filtros Avanzados")
+        with _rc2:
+            st.button("🗑️ Limpiar filtros", key="btn_reset_sor",
+                      on_click=_reset_sor_filters,
+                      use_container_width=True, type="secondary")
 
         with st.container():
-            st.markdown("#### 🔍 Filtros Avanzados")
             c1, c2 = st.columns(2)
 
             _edo_sel = st.session_state.get("s_fil_edo", [])
@@ -1461,8 +1525,19 @@ def view_walmart(df_w):
                 return  
             st.session_state["w_fil_store"] = []
 
-        with st.container():
+        def _reset_wal_filters():
+            for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
+                st.session_state[_k] = []
+
+        _wc1, _wc2 = st.columns([8, 2])
+        with _wc1:
             st.markdown("#### 🔍 Filtros Avanzados")
+        with _wc2:
+            st.button("🗑️ Limpiar filtros", key="btn_reset_wal",
+                      on_click=_reset_wal_filters,
+                      use_container_width=True, type="secondary")
+
+        with st.container():
             c1,c2,c3 = st.columns(3)
 
             _store_sel = st.session_state.get("w_fil_store", [])
@@ -1654,15 +1729,29 @@ def view_walmart(df_w):
             df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("OLI",na=False)]
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA OLIVAS ($)'})
         elif st.session_state.w_nutri_top10:
-            df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("NUTRIOLI",na=False)&dff_rank["DESC_NORM"].str.contains("946",na=False)]
+            mask_946 = (
+                (dff_rank["CODIGO"].astype(str).str.strip() == "750103912014") |
+                (dff_rank["DESC_NORM"].str.contains("NUTRIOLI", na=False) &
+                 dff_rank["DESC_NORM"].str.contains("946", na=False))
+            )
+            df_sub = dff_rank[mask_946]
             if not df_sub.empty:
-                final_rank = df_sub.groupby(["FORMATO","TIENDA","DESCRIPCION"])[['EXISTENCIA','SO_SEM_ANT','SO_$']].sum().reset_index()
-                final_rank.columns=["FORMATO","TIENDA","PRODUCTO","INVENTARIO","VTA SEM ANTERIOR ($)","SELL OUT ($)"]
+                df_sub = df_sub[(df_sub["SO_$"] > 0) | (df_sub["EXISTENCIA"] > 0)]
+            if not df_sub.empty:
+                cols_disponibles = ["EXISTENCIA", "VTA_S4", "SO_$"]
+                cols_sum = [c for c in cols_disponibles if c in df_sub.columns]
+                final_rank = df_sub.groupby(["FORMATO","TIENDA","DESCRIPCION"])[cols_sum].sum().reset_index()
+                nombres = ["FORMATO", "TIENDA", "PRODUCTO"]
+                if "EXISTENCIA" in cols_sum: nombres.append("INVENTARIO (PZS)")
+                if "VTA_S4"     in cols_sum: nombres.append("VTA SEM ANT (PZS)")
+                if "SO_$"       in cols_sum: nombres.append("SELL OUT ($)")
+                final_rank.columns = nombres
         if final_rank is not None:
             sort_col = final_rank.columns[-1]
             final_rank = final_rank.sort_values(by=sort_col,ascending=False)
             fmt_dict = {c:"${:,.2f}" for c in final_rank.columns if "($)" in c or "$" in c}
-            if "INVENTARIO" in final_rank.columns: fmt_dict["INVENTARIO"]="{:,.0f}"
+            if "INVENTARIO (PZS)" in final_rank.columns: fmt_dict["INVENTARIO (PZS)"]="{:,.0f}"
+            if "VTA SEM ANT (PZS)" in final_rank.columns: fmt_dict["VTA SEM ANT (PZS)"]="{:,.0f}"
             st.dataframe(final_rank.style.format(fmt_dict), use_container_width=True, hide_index=True, height=auto_height(final_rank))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
@@ -1725,6 +1814,20 @@ def view_chedraui(df_c):
             _tienda_opts_c = sorted(_scope["TIENDA"].dropna().unique())
             _no_opts_c     = sorted(_scope["NO_TIENDA"].dropna().unique())
 
+        def _reset_che_filters():
+            for _k in ["c_fil_no","c_fil_ti","c_fil_ed"]:
+                st.session_state[_k] = []
+
+        _cc1, _cc2 = st.columns([8, 2])
+        with _cc1:
+            st.markdown("#### 🔍 Filtros Avanzados")
+        with _cc2:
+            st.button("🗑️ Limpiar filtros", key="btn_reset_che",
+                      on_click=_reset_che_filters,
+                      use_container_width=True, type="secondary")
+
+        with st.container():
+            c1, c2 = st.columns(2)
             with c1:
                 fil_no  = st.multiselect("No Tienda", _no_opts_c, placeholder="Buscar no. tienda...",
                                          key="c_fil_no", on_change=_on_no_change)
