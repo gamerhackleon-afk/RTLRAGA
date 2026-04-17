@@ -29,6 +29,29 @@ URLS_DB = {
     "CHEDRAUI": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/CHEDRAUI.xlsx"
 }
 
+_GITHUB_API = {
+    "SORIANA":  "https://api.github.com/repos/gamerhackleon-afk/RTLRAGA/commits?path=SORIANA.xlsx&per_page=1",
+    "WALMART":  "https://api.github.com/repos/gamerhackleon-afk/RTLRAGA/commits?path=WALMART.xlsx&per_page=1",
+    "CHEDRAUI": "https://api.github.com/repos/gamerhackleon-afk/RTLRAGA/commits?path=CHEDRAUI.xlsx&per_page=1",
+}
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _get_last_update(key: str) -> str:
+    try:
+        resp = requests.get(_GITHUB_API[key], timeout=5,
+                            headers={"Accept": "application/vnd.github+json"})
+        if resp.status_code == 200:
+            data = resp.json()
+            if data:
+                iso = data[0]["commit"]["committer"]["date"]
+                from datetime import datetime, timezone, timedelta
+                dt = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                dt_mx = dt - timedelta(hours=6)
+                return dt_mx.strftime("%d/%m/%Y %H:%M") + " hrs"
+    except Exception:
+        pass
+    return "Sin información"
+
 RETAILER_COLORS = {
     "SORIANA": "#D32F2F",
     "WALMART": "#0071DC",
@@ -425,13 +448,11 @@ def load_sor(path):
         SORIANA_COLS["SO_$"] = ["SO_$"]
         SORIANA_COLS["SO_4SEM"] = ["SO_4SEM"]
 
-        # Guardar columna 7 (Ciudad) por índice antes de renombrar
         _ciudad_idx = df.iloc[:, 7].copy() if len(df.columns) > 7 else None
 
         df = validate_columns(df, "SORIANA", SORIANA_COLS)
         if df is None: return None
 
-        # Si CIUDAD quedó con valores iguales a TIENDA, usar columna por índice
         if _ciudad_idx is not None:
             _ciu_str = _ciudad_idx.fillna("").astype(str).str.strip().str.upper()
             _tda_str = df["TIENDA"].fillna("").astype(str).str.strip().str.upper()
@@ -590,13 +611,15 @@ def _get_cached_df(key: str) -> pd.DataFrame | None:
         return None
 
 def _get_df_with_fallback(key: str) -> "pd.DataFrame | None":
+    """Intenta cache_data; si falla usa respaldo en session_state (modo offline)."""
     try:
         df = _get_cached_df(key)
         if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-            st.session_state[f"_backup_{key}"] = df
+            st.session_state[f"_backup_{key}"] = df  # guardar respaldo
             return df
     except Exception:
         pass
+    # Fallback offline
     backup = st.session_state.get(f"_backup_{key}")
     if backup is not None and isinstance(backup, pd.DataFrame) and not backup.empty:
         return backup
@@ -1067,15 +1090,18 @@ if not st.session_state.data_loaded:
         st.session_state.data_loaded = True
 
     else:
+        # Sin internet — recuperar desde respaldo en session_state
         st.session_state.data_loaded = True
         _recovered = 0
-        for _rk in ["SORIANA", "WALMART", "CHEDRAUI"]:
-            if _get_df_with_fallback(_rk) is not None:
+        for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
+            _df_off = _get_df_with_fallback(_rk)
+            if _df_off is not None:
+                st.session_state[_ss] = _df_off
                 _recovered += 1
         if _recovered == 0:
-            st.warning("⚠️ Sin conexión y sin datos en caché.")
+            st.warning("⚠️ Sin conexión y sin datos en caché. Conéctese a internet para cargar las bases.")
         else:
-            st.info(f"📴 Modo OFFLINE — usando datos en caché ({_recovered}/3 bases disponibles)")
+            st.info(f"📴 Modo OFFLINE — {_recovered}/3 bases disponibles desde caché")
 
     try:
         for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
@@ -1113,7 +1139,7 @@ def get_cached_or_upload(key, uploader_key, load_func):
     df_key_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
     ss_key = df_key_map[key]
 
-    # Leer desde @st.cache_data con fallback offline
+    # Leer con fallback offline
     try:
         df = _get_df_with_fallback(key)
         if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
@@ -1141,6 +1167,8 @@ def _us(series) -> list:
 def view_soriana(df_s):
     df_s_cat = pd.read_json(StringIO(categorize_full_df(df_s.to_json(), "SORIANA")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
+    _upd_s = _get_last_update("SORIANA")
+    st.markdown(f"<p style='text-align:right;color:#888;font-size:0.75rem;margin:-8px 0 4px 0;'>🕐 Última actualización: <b>{_upd_s}</b></p>", unsafe_allow_html=True)
 
     def tog_s_rojo():
         st.session_state.s_rojo      = not st.session_state.s_rojo
@@ -1194,8 +1222,8 @@ def view_soriana(df_s):
                 _t = df_s[df_s["ESTADO"].isin(edo)]
                 _ciudades = _t["CIUDAD"].dropna().unique()
                 _nombres  = set(_t["TIENDA"].dropna().str.strip().str.upper())
-                _ciudades_limpias = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
-                st.session_state["s_fil_cd"]  = sorted(_ciudades_limpias) if _ciudades_limpias else sorted(_ciudades)
+                _limpias  = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
+                st.session_state["s_fil_cd"]  = sorted(_limpias) if _limpias else sorted(_ciudades)
                 st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
             else:
                 st.session_state["s_fil_cd"]  = []
@@ -1213,8 +1241,8 @@ def view_soriana(df_s):
                 st.session_state["s_fil_edo"] = sorted(_t["ESTADO"].dropna().unique())
                 _ciudades = _t["CIUDAD"].dropna().unique()
                 _nombres  = set(_t["TIENDA"].dropna().str.strip().str.upper())
-                _ciudades_limpias = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
-                st.session_state["s_fil_cd"]  = sorted(_ciudades_limpias) if _ciudades_limpias else sorted(_ciudades)
+                _limpias  = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
+                st.session_state["s_fil_cd"]  = sorted(_limpias) if _limpias else sorted(_ciudades)
                 st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
             else:
                 st.session_state["s_fil_nda"] = []
@@ -1227,12 +1255,8 @@ def view_soriana(df_s):
                 st.session_state[_k] = []
 
         _rc1, _rc2 = st.columns([8, 2])
-        with _rc1:
-            st.markdown("#### 🔍 Filtros Avanzados")
-        with _rc2:
-            st.button("🗑️ Limpiar filtros", key="btn_reset_sor",
-                      on_click=_reset_sor_filters,
-                      use_container_width=True, type="secondary")
+        with _rc1: st.markdown("#### 🔍 Filtros Avanzados")
+        with _rc2: st.button("🗑️ Limpiar filtros", key="btn_reset_sor", on_click=_reset_sor_filters, use_container_width=True, type="secondary")
 
         with st.container():
             c1, c2 = st.columns(2)
@@ -1485,6 +1509,8 @@ def view_soriana(df_s):
 def view_walmart(df_w):
     df_w_cat = pd.read_json(StringIO(categorize_full_df(df_w.to_json(), "WALMART")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
+    _upd_w = _get_last_update("WALMART")
+    st.markdown(f"<p style='text-align:right;color:#888;font-size:0.75rem;margin:-8px 0 4px 0;'>🕐 Última actualización: <b>{_upd_w}</b></p>", unsafe_allow_html=True)
 
     def tog_w(target):
         for v in ['w_neg','w_4w','w_dias_inv','w_dias_prod']:
@@ -1530,12 +1556,8 @@ def view_walmart(df_w):
                 st.session_state[_k] = []
 
         _wc1, _wc2 = st.columns([8, 2])
-        with _wc1:
-            st.markdown("#### 🔍 Filtros Avanzados")
-        with _wc2:
-            st.button("🗑️ Limpiar filtros", key="btn_reset_wal",
-                      on_click=_reset_wal_filters,
-                      use_container_width=True, type="secondary")
+        with _wc1: st.markdown("#### 🔍 Filtros Avanzados")
+        with _wc2: st.button("🗑️ Limpiar filtros", key="btn_reset_wal", on_click=_reset_wal_filters, use_container_width=True, type="secondary")
 
         with st.container():
             c1,c2,c3 = st.columns(3)
@@ -1735,8 +1757,14 @@ def view_walmart(df_w):
                  dff_rank["DESC_NORM"].str.contains("946", na=False))
             )
             df_sub = dff_rank[mask_946]
+            # Excluir tiendas sin ninguna actividad (todo en cero)
             if not df_sub.empty:
-                df_sub = df_sub[(df_sub["SO_$"] > 0) | (df_sub["EXISTENCIA"] > 0)]
+                _vta_col = "VTA_S4" if "VTA_S4" in df_sub.columns else None
+                _mask_activo = df_sub["SO_$"] > 0
+                if _vta_col:
+                    _mask_activo = _mask_activo | (df_sub[_vta_col] > 0)
+                _mask_activo = _mask_activo | (df_sub["EXISTENCIA"] > 0)
+                df_sub = df_sub[_mask_activo]
             if not df_sub.empty:
                 cols_disponibles = ["EXISTENCIA", "VTA_S4", "SO_$"]
                 cols_sum = [c for c in cols_disponibles if c in df_sub.columns]
@@ -1746,6 +1774,9 @@ def view_walmart(df_w):
                 if "VTA_S4"     in cols_sum: nombres.append("VTA SEM ANT (PZS)")
                 if "SO_$"       in cols_sum: nombres.append("SELL OUT ($)")
                 final_rank.columns = nombres
+                # Excluir filas donde todo sea 0 post-groupby
+                _num_cols = [c for c in final_rank.columns if c not in ["FORMATO","TIENDA","PRODUCTO"]]
+                final_rank = final_rank[final_rank[_num_cols].sum(axis=1) > 0]
         if final_rank is not None:
             sort_col = final_rank.columns[-1]
             final_rank = final_rank.sort_values(by=sort_col,ascending=False)
@@ -1758,6 +1789,8 @@ def view_walmart(df_w):
 def view_chedraui(df_c):
     df_c_cat = pd.read_json(StringIO(categorize_full_df(df_c.to_json(), "CHEDRAUI")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
+    _upd_c = _get_last_update("CHEDRAUI")
+    st.markdown(f"<p style='text-align:right;color:#888;font-size:0.75rem;margin:-8px 0 4px 0;'>🕐 Última actualización: <b>{_upd_c}</b></p>", unsafe_allow_html=True)
 
     def tog_c(target):
         for v in ['c_neg_zero','c_dias_inv','c_transito']:
@@ -1819,12 +1852,8 @@ def view_chedraui(df_c):
                 st.session_state[_k] = []
 
         _cc1, _cc2 = st.columns([8, 2])
-        with _cc1:
-            st.markdown("#### 🔍 Filtros Avanzados")
-        with _cc2:
-            st.button("🗑️ Limpiar filtros", key="btn_reset_che",
-                      on_click=_reset_che_filters,
-                      use_container_width=True, type="secondary")
+        with _cc1: st.markdown("#### 🔍 Filtros Avanzados")
+        with _cc2: st.button("🗑️ Limpiar filtros", key="btn_reset_che", on_click=_reset_che_filters, use_container_width=True, type="secondary")
 
         with st.container():
             c1, c2 = st.columns(2)
