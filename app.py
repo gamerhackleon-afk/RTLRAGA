@@ -87,9 +87,9 @@ if _time.time() - st.session_state.get("last_online_check", 0) > 30:
     st.session_state.is_online         = _check_online()
     st.session_state.last_online_check = _time.time()
 
-# Default estado de botón ranking por retailer (GEN si no hay selección previa)
+# Sin default — ningún botón de ranking activo hasta que el usuario lo presione
 for _retailer in ["SORIANA", "WALMART", "CHEDRAUI"]:
-    st.session_state.setdefault(f"rank_btn_{_retailer}", "GEN")
+    st.session_state.setdefault(f"rank_btn_{_retailer}", "")
 
 if not st.session_state.is_online:
     st.caption("📴 Modo offline — usando datos en caché")
@@ -1199,19 +1199,7 @@ else:
     pass  # DataFrames viven en @st.cache_data — no se duplican en session_state
 
 
-# ── DEBUG INFO (expander oculto por defecto) ────────────────────────
-with st.expander("🛠 Debug info", expanded=False):
-    st.write("**Retailer activo:**", st.session_state.get("active_retailer", "—"))
-    st.write("**Data cargada:**", st.session_state.get("data_loaded", False))
-    st.write("**Online:**", st.session_state.get("is_online", "—"))
-    errs = st.session_state.get("load_errors", {})
-    if errs:
-        st.write("**Errores de carga:**")
-        for k, v in errs.items():
-            st.write(f"  • {k}: {v}")
-    else:
-        st.write("**Errores de carga:** ninguno ✅")
-# ─────────────────────────────────────────────────────────────────────
+
 
 if st.session_state.load_errors:
     for k, err in st.session_state.load_errors.items():
@@ -1550,7 +1538,7 @@ def view_soriana(df_s):
         else:
             dff_vista = dff[dff['SIN_VTA']].copy() if st.session_state.s_rojo else dff.copy()
             if st.session_state.s_rojo:
-                st.caption("📋 Vista: Sin Venta")
+                pass
             disp = dff_vista[["NO_TIENDA","TIENDA","CODIGO","DESCRIPCION","INV_CAJAS","SO_$","SO_4SEM","DIAS_INV"]].copy()
             disp.columns=['No.','TIENDA','CODIGO','ARTICULO','INV CAJAS','SELL OUT SEM','SELL OUT ULT 4 SEM','DIAS INV']
             disp = disp.sort_values(by='SELL OUT ULT 4 SEM',ascending=False)
@@ -1582,7 +1570,7 @@ def view_soriana(df_s):
                 final_s_rank = final_s_rank.sort_values(by=rank_title_s,ascending=False)
                 st.dataframe(final_s_rank.style.format({rank_title_s:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_s_rank))
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_s_rank), file_name="Soriana_Ranking.xlsx", use_container_width=True)
-            else: st.caption("ℹ️ No se encontraron ventas para los productos seleccionados.")
+            
 
 def view_walmart(df_w):
     df_w_cat = pd.read_json(StringIO(categorize_full_df(df_w.to_json(), "WALMART")))  # @cache_data TTL 4h
@@ -1681,8 +1669,8 @@ def view_walmart(df_w):
         with b3: st.button("📅 DIAS INV",     on_click=tog_w, args=('w_dias_inv',),  use_container_width=True, type="primary" if w_dias_inv  else "secondary")
         with b4: st.button("📋 DIAS X PROD",  on_click=tog_w, args=('w_dias_prod',), use_container_width=True, type="primary" if w_dias_prod else "secondary")
 
-        if st.session_state.w_neg: dff=dff[dff["EXISTENCIA"]<0]; st.caption("📋 Vista: Negativos")
-        if st.session_state.w_4w:  dff=dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]; st.caption("📋 Vista: Sin venta 4 semanas")
+        if st.session_state.w_neg: dff=dff[dff["EXISTENCIA"]<0]
+        if st.session_state.w_4w:  dff=dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]
 
         dff_cat = dff_graph.merge(df_w_cat[["Category","Category_PIE"]], left_index=True, right_index=True, how="left")
         c_kpi,c_chart = st.columns([1,2])
@@ -2134,7 +2122,7 @@ def view_chedraui(df_c):
                 st.markdown(f'<a href="{wa_url}" target="_blank" style="display: flex; align-items: center; justify-content: center; background-color: #25D366; color: white; padding: 8px 12px; border-radius: 6px; text-decoration: none; font-weight: 800; font-family: sans-serif; height: 42px; margin-top: 0px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📲 ENVIAR POR WHATSAPP</a>', unsafe_allow_html=True)
 
         else:
-            st.caption("📋 Vista: Completa")
+            pass  # vista completa
             # ── FIX 2: incluir columna CATEGORIA (con BORGES) en Excel exportado
             _dff_cat_merge2 = dff.merge(df_c_cat[["Category"]], left_index=True, right_index=True, how="left")
             disp=_dff_cat_merge2[["NO_TIENDA","TIENDA","ARTICULO","Category","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
@@ -2170,7 +2158,7 @@ def view_chedraui(df_c):
                 final_c_rank = final_c_rank.sort_values(by=rank_title,ascending=False)
                 st.dataframe(final_c_rank.style.format({rank_title:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_c_rank), file_name="Chedraui_Ranking.xlsx", use_container_width=True)
-            else: st.caption("ℹ️ No se encontraron ventas para los productos seleccionados en este estado.")
+            
 
 # --- 14. EJECUTAR VISTA ACTIVA ---
 inject_button_styles()
