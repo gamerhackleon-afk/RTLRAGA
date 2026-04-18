@@ -12,11 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import logging
 
-logging.basicConfig(
-    filename="app_debug.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s"
-)
+logging.basicConfig(level=logging.ERROR)
 
 def log_error(context: str, error: Exception):
     logging.error(f"{context} → {str(error)}")
@@ -53,7 +49,7 @@ st.set_page_config(
 )
 
 # --- 2. CONFIGURACIÓN CENTRALIZADA ---
-CACHE_CONFIG = {'ttl': 14400, 'max_entries': 10, 'show_spinner': False}  # 4 horas
+CACHE_CONFIG = {'ttl': 1800, 'max_entries': 3, 'show_spinner': False}   # 30 min
 
 URLS_DB = {
     "SORIANA": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/SORIANA.xlsx",
@@ -226,7 +222,7 @@ def convert_df_to_excel(df):
         df.to_excel(writer, index=False, sheet_name='Reporte')
     return output.getvalue()
 
-@st.cache_data(show_spinner=False, ttl=14400)
+@st.cache_data(show_spinner=False, ttl=1800)
 def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
     import json
     pie_df = pd.read_json(StringIO(pie_df_json))
@@ -246,7 +242,7 @@ def _make_pie(pie_df_json: str, domain: list, range_: list, val_col: str):
     )
     return fig
 
-@st.cache_data(show_spinner=False, ttl=14400)
+@st.cache_data(show_spinner=False, ttl=1800)
 def _categorize_df(df_json: str, retailer: str) -> str:
     df = pd.read_json(StringIO(df_json))
 
@@ -306,11 +302,11 @@ def _categorize_df(df_json: str, retailer: str) -> str:
     df.loc[df['Category'] == "REST NUTRIOLI", 'Category'] = None
     return df.to_json()
 
-@st.cache_data(show_spinner=False, ttl=14400)
+@st.cache_data(show_spinner=False, ttl=1800)
 def categorize_full_df(df_json: str, retailer: str) -> str:
     return _categorize_df(df_json, retailer)
 
-@st.cache_data(show_spinner=False, ttl=14400)
+@st.cache_data(show_spinner=False, ttl=1800)
 def build_pie_cached(pie_df_json: str, retailer: str):
     COLORS = {
         "SORIANA":  (["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"],
@@ -326,7 +322,7 @@ def build_pie_cached(pie_df_json: str, retailer: str):
     domain, range_, val_col = COLORS[retailer]
     return _make_pie(pie_df_json, domain, range_, val_col)
 
-@st.cache_data(show_spinner=False, ttl=14400)
+@st.cache_data(show_spinner=False, ttl=1800)
 def precompute_pie_base(df_cat_json: str, retailer: str) -> str:
     df = pd.read_json(StringIO(df_cat_json))
     # Usar Category_PIE (incluye REST NUTRIOLI) para la gráfica
@@ -494,6 +490,7 @@ def validate_columns(df, retailer, required_cols_dict):
 def optimize_floats(df):
     for col in df.select_dtypes(include=['float64']).columns:
         df[col] = df[col].astype('float32')
+    df = df.convert_dtypes(convert_floating=False)
     return df
 
 def _str_cols(df, cols):
@@ -695,7 +692,7 @@ def load_che(path):
         log_error("load_che", e)
         return None
 
-@st.cache_data(ttl=14400, max_entries=3, show_spinner=False)
+@st.cache_data(ttl=1800, max_entries=3, show_spinner=False)
 def _get_cached_df(key: str) -> pd.DataFrame | None:
     loaders = {"SORIANA": load_sor, "WALMART": load_wal, "CHEDRAUI": load_che}
     try:
@@ -849,6 +846,7 @@ def load_all_parallel():
             render_screen(pct, msg, {k for k in done_parse if results.get(k) is not None},
                           "⚙️ Fase 2/2 — Procesando Excel en paralelo")
 
+    del raw_buffers  # liberar memoria de buffers Excel
     ok_count = sum(1 for v in results.values() if v is not None)
     progress_bar.progress(1.0)
     status_text.markdown(
@@ -1007,39 +1005,14 @@ def inject_button_styles():
 <script>
 (function() {{
     var doc = window.parent.document;
-
-    if (window.__BTN_STYLE_INIT__) return;
-    window.__BTN_STYLE_INIT__ = true;
-
-    function styleButton(b) {{
-        var t = b.textContent.trim();
-        var newState = t + '|' + (b.disabled ? '1' : '0');
-        if (b.dataset.state === newState) return;
-        {all_cases}
-        b.dataset.state = newState;
+    function applyStyles() {{
+        doc.querySelectorAll('button').forEach(function(b) {{
+            var t = (b.innerText || b.textContent || '').trim();
+            {all_cases}
+        }});
     }}
-
-    function scanAndStyle(root) {{
-        root.querySelectorAll('button').forEach(styleButton);
-    }}
-
-    scanAndStyle(doc);
-
-    var _styleTimeout;
-    new MutationObserver(function(mutations) {{
-        if (!mutations.length) return;
-        clearTimeout(_styleTimeout);
-        _styleTimeout = setTimeout(function() {{
-            mutations.forEach(function(m) {{
-                m.addedNodes.forEach(function(node) {{
-                    if (node.nodeType !== 1) return;
-                    if (node.tagName === 'BUTTON') styleButton(node);
-                    else scanAndStyle(node);
-                }});
-            }});
-            scanAndStyle(doc);
-        }}, 100);
-    }}).observe(doc.body, {{childList:true, subtree:true}});
+    applyStyles();
+    new MutationObserver(applyStyles).observe(doc.body, {{childList:true, subtree:true}});
 }})();
 </script>
 """
@@ -1094,14 +1067,47 @@ st.components.v1.html("""
     const win = window.parent;
     let savedScroll = 0;
     let restoring = false;
-    function saveScroll() { savedScroll = win.scrollY; restoring = true; }
+    let restoreTimer = null;
+
+    function saveScroll() {
+        savedScroll = win.scrollY;
+        restoring = true;
+    }
+
     function restoreScroll() {
         if (!restoring) return;
-        win.scrollTo({ top: savedScroll, behavior: "instant" });
-        restoring = false;
+        clearTimeout(restoreTimer);
+        restoreTimer = setTimeout(function() {
+            win.scrollTo({ top: savedScroll, behavior: "instant" });
+            restoring = false;
+        }, 60);
     }
+
+    // Capturar scroll ANTES del click (mousedown es más temprano que click)
     win.document.addEventListener("mousedown", saveScroll, true);
-    new MutationObserver(restoreScroll).observe(win.document.body, { childList: true, subtree: true });
+    // También capturar en touchstart para móvil
+    win.document.addEventListener("touchstart", saveScroll, true);
+
+    // Primer click: el DOM puede no estar listo → esperar con retry
+    let retryCount = 0;
+    function restoreWithRetry() {
+        if (!restoring) return;
+        win.scrollTo({ top: savedScroll, behavior: "instant" });
+        retryCount++;
+        if (retryCount < 4) {
+            setTimeout(restoreWithRetry, 80);
+        } else {
+            retryCount = 0;
+            restoring = false;
+        }
+    }
+
+    var _scrollTimer;
+    new MutationObserver(function(mutations) {
+        if (!restoring) return;
+        clearTimeout(_scrollTimer);
+        _scrollTimer = setTimeout(restoreWithRetry, 60);
+    }).observe(win.document.body, { childList: true, subtree: true });
 })();
 </script>
 """, height=0, scrolling=False)
@@ -1260,7 +1266,7 @@ def get_cached_or_upload(key, uploader_key, load_func):
         return df
     return None
 
-@st.cache_data(show_spinner=False, ttl=14400)
+@st.cache_data(show_spinner=False, ttl=1800)
 def _unique_sorted(series_hash: int, vals_tuple: tuple) -> list:
     return sorted(vals_tuple)
 
