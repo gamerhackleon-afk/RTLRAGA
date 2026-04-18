@@ -1007,14 +1007,39 @@ def inject_button_styles():
 <script>
 (function() {{
     var doc = window.parent.document;
-    function applyStyles() {{
-        doc.querySelectorAll('button').forEach(function(b) {{
-            var t = (b.innerText || b.textContent || '').trim();
-            {all_cases}
-        }});
+
+    if (window.__BTN_STYLE_INIT__) return;
+    window.__BTN_STYLE_INIT__ = true;
+
+    function styleButton(b) {{
+        var t = b.textContent.trim();
+        var newState = t + '|' + (b.disabled ? '1' : '0');
+        if (b.dataset.state === newState) return;
+        {all_cases}
+        b.dataset.state = newState;
     }}
-    applyStyles();
-    new MutationObserver(applyStyles).observe(doc.body, {{childList:true, subtree:true}});
+
+    function scanAndStyle(root) {{
+        root.querySelectorAll('button').forEach(styleButton);
+    }}
+
+    scanAndStyle(doc);
+
+    var _styleTimeout;
+    new MutationObserver(function(mutations) {{
+        if (!mutations.length) return;
+        clearTimeout(_styleTimeout);
+        _styleTimeout = setTimeout(function() {{
+            mutations.forEach(function(m) {{
+                m.addedNodes.forEach(function(node) {{
+                    if (node.nodeType !== 1) return;
+                    if (node.tagName === 'BUTTON') styleButton(node);
+                    else scanAndStyle(node);
+                }});
+            }});
+            scanAndStyle(doc);
+        }}, 100);
+    }}).observe(doc.body, {{childList:true, subtree:true}});
 }})();
 </script>
 """
