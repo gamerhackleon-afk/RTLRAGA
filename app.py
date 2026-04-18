@@ -6,8 +6,40 @@ import time
 import requests
 import plotly.express as px
 import urllib.parse
+import re
 from io import BytesIO, StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import logging
+
+logging.basicConfig(
+    filename="app_debug.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s"
+)
+
+def log_error(context: str, error: Exception):
+    logging.error(f"{context} → {str(error)}")
+
+
+def safe_numeric(series, col_name: str):
+    """Convierte a numérico con log de errores silenciosos."""
+    try:
+        return pd.to_numeric(series, errors='coerce').fillna(0)
+    except Exception as e:
+        log_error(f"safe_numeric:{col_name}", e)
+        return pd.Series([0] * len(series))
+
+def validate_df(df, name: str) -> bool:
+    """Valida que un DataFrame sea usable. Registra error silencioso si no."""
+    if df is None:
+        log_error("validate_df", Exception(f"{name} no cargó correctamente."))
+        return False
+    if df.empty:
+        log_error("validate_df", Exception(f"{name} está vacío."))
+        return False
+    return True
+
 
 # Eliminar límite de celdas del Styler de Pandas — evita error con tablas grandes
 pd.set_option("styler.render.max_elements", 2_000_000)
@@ -29,29 +61,6 @@ URLS_DB = {
     "CHEDRAUI": "https://github.com/gamerhackleon-afk/RTLRAGA/raw/main/CHEDRAUI.xlsx"
 }
 
-_GITHUB_API = {
-    "SORIANA":  "https://api.github.com/repos/gamerhackleon-afk/RTLRAGA/commits?path=SORIANA.xlsx&per_page=1",
-    "WALMART":  "https://api.github.com/repos/gamerhackleon-afk/RTLRAGA/commits?path=WALMART.xlsx&per_page=1",
-    "CHEDRAUI": "https://api.github.com/repos/gamerhackleon-afk/RTLRAGA/commits?path=CHEDRAUI.xlsx&per_page=1",
-}
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def _get_last_update(key: str) -> str:
-    try:
-        resp = requests.get(_GITHUB_API[key], timeout=5,
-                            headers={"Accept": "application/vnd.github+json"})
-        if resp.status_code == 200:
-            data = resp.json()
-            if data:
-                iso = data[0]["commit"]["committer"]["date"]
-                from datetime import datetime, timezone, timedelta
-                dt = datetime.strptime(iso, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
-                dt_mx = dt - timedelta(hours=6)
-                return dt_mx.strftime("%d/%m/%Y %H:%M") + " hrs"
-    except Exception:
-        pass
-    return "Sin información"
-
 RETAILER_COLORS = {
     "SORIANA": "#D32F2F",
     "WALMART": "#0071DC",
@@ -60,15 +69,30 @@ RETAILER_COLORS = {
 
 # --- FUNCIÓN DE CONECTIVIDAD ---
 def _check_online() -> bool:
+    import socket
     try:
-        requests.head("https://github.com", timeout=2)
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
         return True
     except Exception:
         return False
 
 # --- INICIALIZACIÓN DE SESSION STATE ---
+import time as _time
 if 'is_online' not in st.session_state:
-    st.session_state.is_online = _check_online()
+    st.session_state.is_online         = _check_online()
+    st.session_state.last_online_check = _time.time()
+
+# Auto-reconexión cada 30 segundos
+if _time.time() - st.session_state.get("last_online_check", 0) > 30:
+    st.session_state.is_online         = _check_online()
+    st.session_state.last_online_check = _time.time()
+
+# Default estado de botón ranking por retailer (GEN si no hay selección previa)
+for _retailer in ["SORIANA", "WALMART", "CHEDRAUI"]:
+    st.session_state.setdefault(f"rank_btn_{_retailer}", "GEN")
+
+if not st.session_state.is_online:
+    st.caption("📴 Modo offline — usando datos en caché")
 
 if 'active_retailer' not in st.session_state:
     st.session_state.active_retailer = 'WALMART'
@@ -99,20 +123,20 @@ _view_vars = [
     'c_neg_zero','c_dias_inv','c_transito','c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut',
 ]
 for _v in _view_vars:
-    if _v not in st.session_state:
-        st.session_state[_v] = False
+    st.session_state.setdefault(_v, False)
 
 # --- 3. FUNCIONES UTILITARIAS ---
 def safe_mean(series):
     return series.mean() if not series.empty else 0
 
 def apply_filters(df, filter_cols, selections):
+    """Aplica filtros normalizando strings para evitar bugs de category dtype y espacios."""
     mask = np.ones(len(df), dtype=bool)
     for col, sel in zip(filter_cols, selections):
         if sel and col in df.columns:
-            col_vals = df[col].astype(str).str.strip().str.upper()
-            sel_vals = {str(s).strip().upper() for s in sel}
-            mask &= col_vals.isin(sel_vals).values
+            col_series = df[col].astype(str).str.strip().str.upper()
+            sel_set    = set(str(s).strip().upper() for s in sel)
+            mask      &= col_series.isin(sel_set).values
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
@@ -128,13 +152,19 @@ def get_kpi_mean(df, desc_col, days_col, pattern):
 # --- NUEVAS FUNCIONES DE ALTA PRECISIÓN (POR UPC/DESC EXACTA) ---
 def get_kpi_sum_by_upc(df, upc, value_col="SO_$"):
     """Calcula suma exacta usando agrupamiento por tienda para evitar duplicidad de SKU"""
-    if "CODIGO" not in df.columns:
+    try:
+        if df is None or df.empty:
+            return 0
+        if "CODIGO" not in df.columns:
+            return 0
+        df_upc = df[df["CODIGO"].astype(str).str.strip() == str(upc).strip()]
+        if df_upc.empty:
+            return 0
+        # Evita duplicidad por tienda
+        return df_upc.groupby(["CODIGO", "TIENDA"])[value_col].sum().sum()
+    except Exception as e:
+        log_error("get_kpi_sum_by_upc", e)
         return 0
-    df_upc = df[df["CODIGO"].astype(str).str.strip() == str(upc).strip()]
-    if df_upc.empty:
-        return 0
-    # Evita duplicidad por tienda
-    return df_upc.groupby(["CODIGO", "TIENDA"])[value_col].sum().sum()
 
 def get_kpi_sum_exact_desc(df, desc, value_col="SO_$"):
     """Calcula suma exacta usando descripción completa por si no hay UPC"""
@@ -251,7 +281,11 @@ def _categorize_df(df_json: str, retailer: str) -> str:
         choices = ["BORGES","NUTRIOLI","SABROSANO","GT","BALSAMICO","OLIVAS","PASTAS","REST NUTRIOLI"]
     else:  
         desc = df["DESC_NORM"].astype(str) if "DESC_NORM" in df.columns else _safe_str(df["ARTICULO"])
+        # ── FIX CRÍTICO: BORGES en CHEDRAUI NO viene en DESC_NORM sino en columna CATEGORIA
+        # Se detecta por columna CATEGORIA OR por descripción (doble seguridad)
+        cat_col = df["CATEGORIA"].astype(str).str.upper() if "CATEGORIA" in df.columns else pd.Series([""] * len(df), index=df.index)
         conditions = [
+            (cat_col.str.contains("BORGES", na=False)) | (desc.str.contains("BORGES", na=False)),
             desc.str.contains("BALSAMICO",na=False),
             desc.str.contains("SABROSANO",na=False),
             desc.str.contains("GRANTRADICION",na=False),
@@ -262,10 +296,14 @@ def _categorize_df(df_json: str, retailer: str) -> str:
             desc.str.contains("NUTRIOLI",na=False)&desc.str.contains("400ML|850ML",na=False)&~desc.str.contains("PROTECT|DEFENSAS",na=False),
             desc.str.contains("NUTRIOLI",na=False),
         ]
-        choices = ["BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
+        choices = ["BORGES","BALSAMICO","SABROSANO","GT","MI SAZON","AVE","PASTAS","OLIVAS","NUTRIOLI","REST NUTRIOLI"]
     conditions = [c.to_numpy(dtype=bool) for c in conditions]
     df = df.copy()
     df['Category'] = np.select(conditions, choices, default=None)
+    # ── FIX: Category_PIE incluye REST NUTRIOLI (solo para gráfica circular)
+    #         Category limpia NO tiene REST NUTRIOLI (para tabla y Excel)
+    df['Category_PIE'] = df['Category']
+    df.loc[df['Category'] == "REST NUTRIOLI", 'Category'] = None
     return df.to_json()
 
 @st.cache_data(show_spinner=False, ttl=14400)
@@ -279,10 +317,10 @@ def build_pie_cached(pie_df_json: str, retailer: str):
                      ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"],
                      "SO_$"),
         "WALMART":  (["SABROSANO","GT","OLIVAS","BALSAMICO","PASTAS","REST NUTRIOLI","NUTRIOLI","BORGES"],
-                     ["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#FF0000"],
+                     ["#E4007C","#a18262","#6B8E23","#9f4576","#426045","#bfff00","#008f39","#7B1A1A"],
                      "SO_$"),
-        "CHEDRAUI": (["BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"],
-                     ["#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"],
+        "CHEDRAUI": (["BORGES","BALSAMICO","SABROSANO","PASTAS","OLIVAS","GT","NUTRIOLI","MI SAZON","AVE","REST NUTRIOLI"],
+                     ["#691D08","#e012a9","#f705ab","#4c915d","#97ad6a","#7d6010","#02c705","#e89015","#ff0000","#00ff04"],
                      "SELL_OUT"),
     }
     domain, range_, val_col = COLORS[retailer]
@@ -291,12 +329,15 @@ def build_pie_cached(pie_df_json: str, retailer: str):
 @st.cache_data(show_spinner=False, ttl=14400)
 def precompute_pie_base(df_cat_json: str, retailer: str) -> str:
     df = pd.read_json(StringIO(df_cat_json))
-    if "Category" not in df.columns:
+    # Usar Category_PIE (incluye REST NUTRIOLI) para la gráfica
+    cat_field = "Category_PIE" if "Category_PIE" in df.columns else "Category"
+    if cat_field not in df.columns:
         return None
     val_col = "SELL_OUT" if retailer == "CHEDRAUI" else "SO_$"
     if val_col not in df.columns:
         return None
-    pie_df = df.dropna(subset=["Category"]).groupby("Category")[val_col].sum().reset_index()
+    pie_df = df.dropna(subset=[cat_field]).groupby(cat_field)[val_col].sum().reset_index()
+    pie_df = pie_df.rename(columns={cat_field: "Category"})
     pie_df = pie_df[pie_df[val_col] > 0]
     return pie_df.to_json() if not pie_df.empty else None
 
@@ -316,37 +357,87 @@ def _build_session() -> requests.Session:
 _HTTP_SESSION = _build_session()
 
 def download_file_fast(url: str):
+    import os, hashlib
+
     etag_key  = f'etag_{url}'
     cache_key = f'cached_file_{url}'
+
+    # Ruta de disco robusta con hash MD5
+    os.makedirs("cache", exist_ok=True)
+    filename  = hashlib.md5(url.encode()).hexdigest() + ".bin"
+    disk_path = os.path.join("cache", filename)
+
+    # OFFLINE → NO hacer request, ir directo a cache
+    if not st.session_state.get("is_online", True):
+        cached = st.session_state.get(cache_key)
+        if cached is not None:
+            cached.seek(0)
+            return cached
+        if os.path.exists(disk_path):
+            with open(disk_path, "rb") as f:
+                return BytesIO(f.read())
+        return None
+
     headers = {"If-None-Match": st.session_state.get(etag_key, "")}
 
     try:
         response = _HTTP_SESSION.get(url, headers=headers, timeout=(5, 30), stream=True)
+
         if response.status_code == 304:
             cached = st.session_state.get(cache_key)
             if cached is not None:
                 cached.seek(0)
                 return cached
+            # session_state borrado (recarga/reinicio) → leer disco y re-poblar RAM
+            if os.path.exists(disk_path):
+                with open(disk_path, "rb") as f:
+                    data = f.read()
+                cached_copy = BytesIO(data)
+                cached_copy.seek(0)
+                st.session_state[cache_key] = cached_copy
+                return BytesIO(data)
+            # Sin RAM ni disco: forzar re-descarga completa
             st.session_state.pop(etag_key, None)
             response = _HTTP_SESSION.get(url, timeout=(5, 30), stream=True)
+
         response.raise_for_status()
 
         buf = BytesIO()
         for chunk in response.iter_content(chunk_size=256 * 1024):
-            if chunk: buf.write(chunk)
-        st.session_state[etag_key] = response.headers.get("ETag", "")
+            if chunk:
+                buf.write(chunk)
 
         raw = buf.getvalue()
+
+        # Cache RAM
         cached_copy = BytesIO(raw)
         cached_copy.seek(0)
         st.session_state[cache_key] = cached_copy
 
+        # Cache disco — persiste entre recargas y reinicios
+        with open(disk_path, "wb") as f:
+            f.write(raw)
+
+        st.session_state[etag_key] = response.headers.get("ETag", "")
+
         buf.seek(0)
         return buf
+
     except requests.exceptions.Timeout:
-        st.session_state.is_online = _check_online()
+        st.session_state["is_online"] = False
+        if os.path.exists(disk_path):
+            with open(disk_path, "rb") as f:
+                return BytesIO(f.read())
         return None
-    except Exception:
+    except Exception as e:
+        log_error("download_file_fast", e)
+        cached = st.session_state.get(cache_key)
+        if cached is not None:
+            cached.seek(0)
+            return cached
+        if os.path.exists(disk_path):
+            with open(disk_path, "rb") as f:
+                return BytesIO(f.read())
         return None
 
 def download_file(url_or_file):
@@ -355,11 +446,17 @@ def download_file(url_or_file):
     url_or_file.seek(0)
     return url_or_file
 
-def set_retailer(retailer_name):
-    st.session_state.active_retailer = retailer_name
+
+# _view_vars definida al inicio del archivo (usar esa — nombres canónicos con guion bajo)
+
+def reset_views():
     for var in _view_vars:
         if var in st.session_state:
             st.session_state[var] = False
+
+def set_retailer(retailer_name):
+    st.session_state.active_retailer = retailer_name
+    reset_views()
 
 # --- 4. MOTOR INTELIGENTE DE LECTURA DE COLUMNAS ---
 def find_col(df, candidates):
@@ -384,9 +481,13 @@ def validate_columns(df, retailer, required_cols_dict):
             faltantes.append(f"{col_interna} (ej. {candidatos[0]})")
     
     if faltantes:
-        st.error(f"⚠️ **Error en la base de {retailer}:** El Excel cambió su estructura. No se encontraron las siguientes columnas:\n" + "\n".join(f"- {c}" for c in faltantes))
+        log_error("validate_columns", Exception(f"Columnas faltantes en {retailer}: {", ".join(faltantes)}"))
         return None
-    
+
+    for col_interna, col_encontrada in mapeo.items():
+        if col_encontrada in df.columns and df[col_encontrada].isna().all():
+            log_error("validate_columns", Exception(f"Columna vacía '{col_encontrada}' en {retailer}"))
+
     df = df.rename(columns=mapeo)
     return df[list(required_cols_dict.keys())]
 
@@ -420,7 +521,7 @@ def load_sor(path):
             "DESCRIPCION": ["Descripción", "Descripcion"],
             "NO_TIENDA": ["No tienda", "No. Tienda", "# Tienda"],
             "TIENDA": ["Nombre Tienda", "Tienda"],
-            "CIUDAD": ["Ciudad", "CIUDAD", "Municipio", "MUNICIPIO", "City"],
+            "CIUDAD": ["Ciudad"],
             "ESTADO": ["Estado"],
             "FORMATO": ["Formato"],
             "PEDIDOS": ["# PEDIDOS", "PEDIDOS"],
@@ -447,18 +548,10 @@ def load_sor(path):
             
         SORIANA_COLS["SO_$"] = ["SO_$"]
         SORIANA_COLS["SO_4SEM"] = ["SO_4SEM"]
-
-        _ciudad_idx = df.iloc[:, 7].copy() if len(df.columns) > 7 else None
-
+        
         df = validate_columns(df, "SORIANA", SORIANA_COLS)
         if df is None: return None
-
-        if _ciudad_idx is not None:
-            _ciu_str = _ciudad_idx.fillna("").astype(str).str.strip().str.upper()
-            _tda_str = df["TIENDA"].fillna("").astype(str).str.strip().str.upper()
-            if (_ciu_str == _tda_str).mean() > 0.5:
-                df["CIUDAD"] = _ciu_str
-
+        
         df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
         for c in ["DIAS_INV", "INV_CAJAS", "PROM_SEM_CAJAS", "SO_$", "SO_4SEM", "PEDIDOS", "CANTIDAD_PZS"]:
             df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
@@ -476,7 +569,7 @@ def load_sor(path):
         df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
     except Exception as e:
-        st.error(f"Error procesando Soriana: {e}")
+        log_error("load_sor", e)
         return None
 
 @st.cache_data(**CACHE_CONFIG)
@@ -525,12 +618,13 @@ def load_wal(path):
         df["FORMATO"] = df["FORMATO"].str.replace(r'\s+', ' ', regex=True).str.strip().str.upper()
         
         df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
-        for _cat_col in ["TIENDA", "ESTADO", "FORMATO", "MARCA", "CATEGORIA"]:
+        # ── CORRECCIÓN: NO convertir a category TIENDA/ESTADO/FORMATO — rompe apply_filters
+        for _cat_col in ["MARCA", "CATEGORIA"]:
             if _cat_col in df.columns:
                 df[_cat_col] = df[_cat_col].astype("category")
         return optimize_floats(df)
     except Exception as e:
-        st.error(f"Error procesando Walmart: {e}")
+        log_error("load_wal", e)
         return None
 
 @st.cache_data(**CACHE_CONFIG)
@@ -566,8 +660,10 @@ def load_che(path):
         df = validate_columns(df, "CHEDRAUI", CHEDRAUI_COLS)
         if df is None: return None 
         
-        col_h = pd.to_numeric(df["COL_FILTRO"], errors='coerce')
-        df = df[col_h != 0]
+        # ── FIX: normalizar COL_FILTRO para incluir estatus 1, 0 y vacío correctamente
+        if "COL_FILTRO" in df.columns:
+            df["COL_FILTRO"] = df["COL_FILTRO"].fillna("").astype(str).str.strip()
+        # No filtrar por COL_FILTRO — se suman todos los estatus (1, 0 y vacío)
         df = df.dropna(subset=["ARTICULO"])
         df = df[pd.to_numeric(df["NO_TIENDA"], errors='coerce').notna()]
         
@@ -596,7 +692,7 @@ def load_che(path):
         df["DESC_NORM"] = df["ARTICULO"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
         return optimize_floats(df)
     except Exception as e:
-        st.error(f"Error procesando Chedraui: {e}")
+        log_error("load_che", e)
         return None
 
 @st.cache_data(ttl=14400, max_entries=3, show_spinner=False)
@@ -609,21 +705,6 @@ def _get_cached_df(key: str) -> pd.DataFrame | None:
         return df
     except Exception:
         return None
-
-def _get_df_with_fallback(key: str) -> "pd.DataFrame | None":
-    """Intenta cache_data; si falla usa respaldo en session_state (modo offline)."""
-    try:
-        df = _get_cached_df(key)
-        if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-            st.session_state[f"_backup_{key}"] = df  # guardar respaldo
-            return df
-    except Exception:
-        pass
-    # Fallback offline
-    backup = st.session_state.get(f"_backup_{key}")
-    if backup is not None and isinstance(backup, pd.DataFrame) and not backup.empty:
-        return backup
-    return None
 
 # ══════════════════════════════════════════════════════════════════════
 # LISTAS DE PRODUCTOS
@@ -649,6 +730,7 @@ def _download_raw(key: str) -> tuple[str, BytesIO | None, str | None]:
             return key, None, "No se pudo descargar el archivo."
         return key, buf, None
     except Exception as e:
+        log_error(f"download_raw:{key}", e)
         return key, None, str(e)
 
 def _parse_raw(key: str, buf: BytesIO):
@@ -669,6 +751,7 @@ def _parse_raw(key: str, buf: BytesIO):
             return key, None, "Archivo vacío o sin columnas válidas."
         return key, df, None
     except Exception as e:
+        log_error(f"parse_raw:{key}", e)
         return key, None, str(e)
 
 def load_all_parallel():
@@ -816,10 +899,13 @@ def inject_button_styles():
     _prod_active = s_dias_prod or w_dias_prod
     _neg_active  = w_neg or c_neg_zero
 
-    _gen_active = s_rank_gen or w_rank_tiendas or c_rank_gen
-    _pas_active = s_rank_pas or w_rank_pastas  or c_rank_pas
-    _oli_active = s_rank_oli or w_rank_olivas  or c_rank_oli
-    _nut_active = s_rank_nut or w_nutri_top10  or c_rank_nut
+    # Estado de botones ranking — 100% determinista por retailer activo
+    _rank_btn   = st.session_state.get(f"rank_btn_{act}", "")
+    _gen_active = _rank_btn == "GEN"
+    _pas_active = _rank_btn == "PAS"
+    _oli_active = _rank_btn == "OLI"
+    _nut_active = _rank_btn == "NUT"
+
 
     STYLES = [
         # Navegación principal
@@ -1012,6 +1098,8 @@ with c_head2:
 status_txt   = 'CONECTADO' if st.session_state.is_online else 'OFFLINE'
 status_color = "#28a745"   if st.session_state.is_online else "#dc3545"
 st.markdown(f"<div style='text-align:right;font-size:0.7rem;color:{status_color};font-weight:bold;margin-top:-10px;margin-bottom:10px;'>● {status_txt}</div>", unsafe_allow_html=True)
+if not st.session_state.is_online:
+    st.caption("📴 Modo offline — mostrando datos guardados localmente")
 
 # --- 10. CARGA AUTOMÁTICA PARALELA AL INICIAR ---
 _df_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
@@ -1090,22 +1178,11 @@ if not st.session_state.data_loaded:
         st.session_state.data_loaded = True
 
     else:
-        # Sin internet — recuperar desde respaldo en session_state
         st.session_state.data_loaded = True
-        _recovered = 0
-        for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
-            _df_off = _get_df_with_fallback(_rk)
-            if _df_off is not None:
-                st.session_state[_ss] = _df_off
-                _recovered += 1
-        if _recovered == 0:
-            st.warning("⚠️ Sin conexión y sin datos en caché. Conéctese a internet para cargar las bases.")
-        else:
-            st.info(f"📴 Modo OFFLINE — {_recovered}/3 bases disponibles desde caché")
 
     try:
         for _rk, _ss in [("SORIANA","df_soriana"),("WALMART","df_walmart"),("CHEDRAUI","df_chedraui")]:
-            _df_pre = _get_df_with_fallback(_rk)
+            _df_pre = _get_cached_df(_rk)   # Leer desde cache_data, no session_state
             if _df_pre is None:
                 continue
             _pie_key = f"pie_base_{_rk.lower()}"
@@ -1121,9 +1198,24 @@ if not st.session_state.data_loaded:
 else:
     pass  # DataFrames viven en @st.cache_data — no se duplican en session_state
 
+
+# ── DEBUG INFO (expander oculto por defecto) ────────────────────────
+with st.expander("🛠 Debug info", expanded=False):
+    st.write("**Retailer activo:**", st.session_state.get("active_retailer", "—"))
+    st.write("**Data cargada:**", st.session_state.get("data_loaded", False))
+    st.write("**Online:**", st.session_state.get("is_online", "—"))
+    errs = st.session_state.get("load_errors", {})
+    if errs:
+        st.write("**Errores de carga:**")
+        for k, v in errs.items():
+            st.write(f"  • {k}: {v}")
+    else:
+        st.write("**Errores de carga:** ninguno ✅")
+# ─────────────────────────────────────────────────────────────────────
+
 if st.session_state.load_errors:
     for k, err in st.session_state.load_errors.items():
-        st.warning(f"⚠️ {k}: {err}")
+        log_error("loader_errors", Exception(f"{k}: {err}"))
 
 # --- 11. NAVEGACIÓN ---
 col1, col2, col3 = st.columns(3, gap="small")
@@ -1139,15 +1231,15 @@ def get_cached_or_upload(key, uploader_key, load_func):
     df_key_map = {"SORIANA": "df_soriana", "WALMART": "df_walmart", "CHEDRAUI": "df_chedraui"}
     ss_key = df_key_map[key]
 
-    # Leer con fallback offline
+    # Leer desde @st.cache_data — no duplicar DataFrame en session_state
     try:
-        df = _get_df_with_fallback(key)
+        df = _get_cached_df(key)
         if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
             return df
     except Exception:
         pass
 
-    st.warning(f"⚠️ No se pudo cargar {key} automáticamente. Cargue el archivo manualmente.")
+    log_error("get_cached_or_upload", Exception(f"No se pudo cargar {key}"))
     f = st.file_uploader(f"📂 Cargar Excel {key}", type=["xlsx"], key=uploader_key)
     if f:
         with st.spinner(f"Procesando {key}..."):
@@ -1167,8 +1259,6 @@ def _us(series) -> list:
 def view_soriana(df_s):
     df_s_cat = pd.read_json(StringIO(categorize_full_df(df_s.to_json(), "SORIANA")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['SORIANA']}'>SORIANA</div>", unsafe_allow_html=True)
-    _upd_s = _get_last_update("SORIANA")
-    st.markdown(f"<p style='text-align:right;color:#888;font-size:0.75rem;margin:-8px 0 4px 0;'>🕐 Última actualización: <b>{_upd_s}</b></p>", unsafe_allow_html=True)
 
     def tog_s_rojo():
         st.session_state.s_rojo      = not st.session_state.s_rojo
@@ -1194,6 +1284,7 @@ def view_soriana(df_s):
     def set_s_rank(mode):
         for v in ['s_rank_gen','s_rank_pas','s_rank_oli','s_rank_nut']: st.session_state[v]=False
         st.session_state[f's_rank_{mode.lower()}']=True
+        st.session_state['rank_btn_SORIANA'] = mode.upper()
 
     if df_s is not None:
         for _k in ["s_fil_nda","s_fil_edo","s_fil_nom","s_fil_cd","s_fil_fmt"]:
@@ -1216,47 +1307,25 @@ def view_soriana(df_s):
 
         def _on_edo_change():
             if st.session_state.get("s_fil_nda"):
-                return
+                return 
             edo = st.session_state.get("s_fil_edo", [])
-            if edo:
-                _t = df_s[df_s["ESTADO"].isin(edo)]
-                _ciudades = _t["CIUDAD"].dropna().unique()
-                _nombres  = set(_t["TIENDA"].dropna().str.strip().str.upper())
-                _limpias  = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
-                st.session_state["s_fil_cd"]  = sorted(_limpias) if _limpias else sorted(_ciudades)
-                st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
-            else:
-                st.session_state["s_fil_cd"]  = []
-                st.session_state["s_fil_fmt"] = []
             st.session_state["s_fil_nom"] = []
-            st.session_state["s_fil_nda"] = []
+            st.session_state["s_fil_cd"]  = []
+            st.session_state["s_fil_fmt"] = []
 
         def _on_nom_change():
-            if st.session_state.get("s_fil_nda"):
-                return
             nom = st.session_state.get("s_fil_nom", [])
             if nom:
                 _t = df_s[df_s["TIENDA"].isin(nom)]
-                st.session_state["s_fil_nda"] = sorted(_t["NO_TIENDA"].dropna().unique())
+                st.session_state["s_fil_nda"] = list(_t["NO_TIENDA"].dropna().unique())
                 st.session_state["s_fil_edo"] = sorted(_t["ESTADO"].dropna().unique())
-                _ciudades = _t["CIUDAD"].dropna().unique()
-                _nombres  = set(_t["TIENDA"].dropna().str.strip().str.upper())
-                _limpias  = [c for c in _ciudades if str(c).strip().upper() not in _nombres]
-                st.session_state["s_fil_cd"]  = sorted(_limpias) if _limpias else sorted(_ciudades)
+                st.session_state["s_fil_cd"]  = sorted(_t["CIUDAD"].dropna().unique())
                 st.session_state["s_fil_fmt"] = sorted(_t["FORMATO"].dropna().unique())
             else:
                 st.session_state["s_fil_nda"] = []
                 st.session_state["s_fil_edo"] = []
                 st.session_state["s_fil_cd"]  = []
                 st.session_state["s_fil_fmt"] = []
-
-        def _reset_sor_filters():
-            for _k in ["s_fil_nda","s_fil_edo","s_fil_nom","s_fil_cd","s_fil_fmt"]:
-                st.session_state[_k] = []
-
-        _rc1, _rc2 = st.columns([8, 2])
-        with _rc1: st.markdown("#### 🔍 Filtros Avanzados")
-        with _rc2: st.button("🗑️ Limpiar filtros", key="btn_reset_sor", on_click=_reset_sor_filters, use_container_width=True, type="secondary")
 
         with st.container():
             c1, c2 = st.columns(2)
@@ -1288,6 +1357,11 @@ def view_soriana(df_s):
                 fil_fmt = st.multiselect("Formato", _opts_fmt, key="s_fil_fmt", placeholder="Seleccionar...")
                 fil_art = st.multiselect("Artículo", _us(df_s["DESCRIPCION"]), placeholder="Seleccionar...")
 
+        def _clear_sor():
+            for _k in ["s_fil_nda","s_fil_nom","s_fil_edo","s_fil_cd","s_fil_fmt"]: st.session_state[_k]=[]
+        if any([st.session_state.get("s_fil_nda"),st.session_state.get("s_fil_nom"),
+                st.session_state.get("s_fil_edo"),st.session_state.get("s_fil_cd"),st.session_state.get("s_fil_fmt")]):
+            st.button("🗑️ Borrar filtros", on_click=_clear_sor, key="btn_cls_sor", type="secondary")
         dff = apply_filters(df_s,
             ["RESURTIMIENTO","NO_TIENDA","TIENDA","CIUDAD","ESTADO","FORMATO","DESCRIPCION"],
             [fil_res if "Todos" not in fil_res else None, fil_nda, fil_nom, fil_cd, fil_edo, fil_fmt, fil_art])
@@ -1306,7 +1380,7 @@ def view_soriana(df_s):
         with b3: st.button("📋 DIAS X PROD",   on_click=tog_s_dias_prod, use_container_width=True, type="primary" if s_dias_prod else "secondary")
         with b4: st.button("🚚 PEDIDOS EN TRANSITO", on_click=tog_s_transito, use_container_width=True, type="primary" if s_transito else "secondary")
 
-        dff_cat = dff_graph.merge(df_s_cat[["Category"]], left_index=True, right_index=True, how="left")
+        dff_cat = dff_graph.merge(df_s_cat[["Category","Category_PIE"]], left_index=True, right_index=True, how="left")
         c_kpi, c_chart = st.columns([1,2])
         with c_kpi:
             total_so = dff_cat['SO_$'].sum()
@@ -1314,7 +1388,9 @@ def view_soriana(df_s):
         with c_chart:
             _hay_filtros_s = any([fil_nda, fil_nom, fil_cd, fil_edo])
             if _hay_filtros_s:
-                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+                _cat_pie_s = "Category_PIE" if "Category_PIE" in dff_cat.columns else "Category"
+                pie_df = dff_cat.dropna(subset=[_cat_pie_s]).groupby(_cat_pie_s)['SO_$'].sum().reset_index()
+                pie_df = pie_df.rename(columns={_cat_pie_s: "Category"})
                 pie_df = pie_df[pie_df['SO_$']>0]
                 if pie_df.empty:
                     _pie_json_s = st.session_state.get("pie_base_soriana")
@@ -1323,7 +1399,9 @@ def view_soriana(df_s):
             else:
                 _pie_json_s = st.session_state.get("pie_base_soriana")
             if not _pie_json_s:
-                _fb = df_s_cat.dropna(subset=["Category"]).groupby("Category")["SO_$"].sum().reset_index()
+                _cat_pie_s2 = "Category_PIE" if "Category_PIE" in df_s_cat.columns else "Category"
+                _fb = df_s_cat.dropna(subset=[_cat_pie_s2]).groupby(_cat_pie_s2)["SO_$"].sum().reset_index()
+                _fb = _fb.rename(columns={_cat_pie_s2: "Category"})
                 _fb = _fb[_fb["SO_$"]>0]
                 _pie_json_s = _fb.to_json() if not _fb.empty else None
             if _pie_json_s:
@@ -1504,13 +1582,11 @@ def view_soriana(df_s):
                 final_s_rank = final_s_rank.sort_values(by=rank_title_s,ascending=False)
                 st.dataframe(final_s_rank.style.format({rank_title_s:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_s_rank))
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_s_rank), file_name="Soriana_Ranking.xlsx", use_container_width=True)
-            else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados.")
+            else: st.caption("ℹ️ No se encontraron ventas para los productos seleccionados.")
 
 def view_walmart(df_w):
     df_w_cat = pd.read_json(StringIO(categorize_full_df(df_w.to_json(), "WALMART")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['WALMART']}'>WALMART</div>", unsafe_allow_html=True)
-    _upd_w = _get_last_update("WALMART")
-    st.markdown(f"<p style='text-align:right;color:#888;font-size:0.75rem;margin:-8px 0 4px 0;'>🕐 Última actualización: <b>{_upd_w}</b></p>", unsafe_allow_html=True)
 
     def tog_w(target):
         for v in ['w_neg','w_4w','w_dias_inv','w_dias_prod']:
@@ -1521,6 +1597,8 @@ def view_walmart(df_w):
         elif mode=='pastas':   st.session_state.w_rank_pastas=True
         elif mode=='olivas':   st.session_state.w_rank_olivas=True
         elif mode=='nutrioli': st.session_state.w_nutri_top10=True
+        _btn_map = {'tiendas':'GEN','pastas':'PAS','olivas':'OLI','nutrioli':'NUT'}
+        st.session_state['rank_btn_WALMART'] = _btn_map.get(mode, 'GEN')
 
     if df_w is not None:
         # EXCLUSIÓN IMPORTANTE DE BAE y MB que aplica para todo en esta vista
@@ -1550,14 +1628,6 @@ def view_walmart(df_w):
             if st.session_state.get("w_fil_store"):
                 return  
             st.session_state["w_fil_store"] = []
-
-        def _reset_wal_filters():
-            for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]:
-                st.session_state[_k] = []
-
-        _wc1, _wc2 = st.columns([8, 2])
-        with _wc1: st.markdown("#### 🔍 Filtros Avanzados")
-        with _wc2: st.button("🗑️ Limpiar filtros", key="btn_reset_wal", on_click=_reset_wal_filters, use_container_width=True, type="secondary")
 
         with st.container():
             c1,c2,c3 = st.columns(3)
@@ -1590,6 +1660,10 @@ def view_walmart(df_w):
                 excluidas_clean = {"ACEITE VEGETAL SABROSANO RINDE MAS 850ML","OLI SPRAY ACEITE DE OLIVA 145ML","ACEITE MIXTO GRAN TRADICION 1L","ACEITE GRAN TRADICION 900ML","NUTRIOLI 946 ML +PASTA CODO 200G","NUTRIOLI 946 ML +FUSILLI VERDURAS 200G","NUTRIOLI SPAGUETTI ESENCIAL 200G","NUTRIOLI FIDEO ESENCIAL 200G","NUTRIOLI CODO ESENCIAL 200G","NUTRIOLI FUSILLI VERDURAS 200G","NUTRIOLI CODO VERDURAS 200G"}
                 sel_prod = st.multiselect("Artículo", sorted([p for p in df_w["DESCRIPCION"].dropna().unique() if p.strip().upper() not in excluidas_clean]), placeholder="Seleccionar...")
 
+        def _clear_wal():
+            for _k in ["w_fil_store","w_fil_state","w_fil_fmt"]: st.session_state[_k]=[]
+        if any([st.session_state.get("w_fil_store"),st.session_state.get("w_fil_state"),st.session_state.get("w_fil_fmt")]):
+            st.button("🗑️ Borrar filtros", on_click=_clear_wal, key="btn_cls_wal", type="secondary")
         dff_kpi = apply_filters(df_w,["MARCA","ESTADO","TIENDA","FORMATO"],[sel_marca,sel_state,sel_store,sel_fmt])
         dff     = apply_filters(dff_kpi,["DESCRIPCION"],[sel_prod])
 
@@ -1607,10 +1681,10 @@ def view_walmart(df_w):
         with b3: st.button("📅 DIAS INV",     on_click=tog_w, args=('w_dias_inv',),  use_container_width=True, type="primary" if w_dias_inv  else "secondary")
         with b4: st.button("📋 DIAS X PROD",  on_click=tog_w, args=('w_dias_prod',), use_container_width=True, type="primary" if w_dias_prod else "secondary")
 
-        if st.session_state.w_neg: dff=dff[dff["EXISTENCIA"]<0]; st.warning("VISTA: NEGATIVOS")
-        if st.session_state.w_4w:  dff=dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]; st.warning("VISTA: SIN VENTA 4 SEMANAS")
+        if st.session_state.w_neg: dff=dff[dff["EXISTENCIA"]<0]; st.caption("📋 Vista: Negativos")
+        if st.session_state.w_4w:  dff=dff[(dff["VTA_S1"]==0)&(dff["VTA_S2"]==0)&(dff["VTA_S3"]==0)&(dff["VTA_S4"]==0)]; st.caption("📋 Vista: Sin venta 4 semanas")
 
-        dff_cat = dff_graph.merge(df_w_cat[["Category"]], left_index=True, right_index=True, how="left")
+        dff_cat = dff_graph.merge(df_w_cat[["Category","Category_PIE"]], left_index=True, right_index=True, how="left")
         c_kpi,c_chart = st.columns([1,2])
         total_so = dff_cat['SO_$'].sum()
         with c_kpi:
@@ -1618,16 +1692,20 @@ def view_walmart(df_w):
         with c_chart:
             _hay_filtros_w = any([sel_store, sel_state, sel_fmt])
             if _hay_filtros_w:
-                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SO_$'].sum().reset_index()
+                _cat_pie_w = "Category_PIE" if "Category_PIE" in dff_cat.columns else "Category"
+                pie_df = dff_cat.dropna(subset=[_cat_pie_w]).groupby(_cat_pie_w)['SO_$'].sum().reset_index()
+                pie_df = pie_df.rename(columns={_cat_pie_w: "Category"})
                 pie_df = pie_df[pie_df['SO_$']>0]
                 if pie_df.empty:
                     _pie_json_w = st.session_state.get("pie_base_walmart")
                 else:
                     _pie_json_w = pie_df.to_json()
             else:
-                _fb = df_w_cat.dropna(subset=["Category"]).copy()
+                _cat_pie_w2 = "Category_PIE" if "Category_PIE" in df_w_cat.columns else "Category"
+                _fb = df_w_cat.dropna(subset=[_cat_pie_w2]).copy()
                 _fb = _fb.loc[_fb.index.isin(df_w.index)]
-                _fb = _fb.groupby("Category")["SO_$"].sum().reset_index()
+                _fb = _fb.groupby(_cat_pie_w2)["SO_$"].sum().reset_index()
+                _fb = _fb.rename(columns={_cat_pie_w2: "Category"})
                 _fb = _fb[_fb["SO_$"]>0]
                 _pie_json_w = _fb.to_json() if not _fb.empty else None
 
@@ -1741,6 +1819,11 @@ def view_walmart(df_w):
         with sr4: st.button("🏆 NUTRIOLI", on_click=set_rank, args=('nutrioli',), use_container_width=True, type="primary" if w_nutri_top10  else "secondary")
 
         dff_rank = apply_filters(df_w,["ESTADO","FORMATO"],[sel_st_rank,sel_fmt_rank])
+        # ── CORRECCIÓN: eliminar filas con SO_$ = 0 Y EXISTENCIA = 0 del ranking
+        if "SO_$" in dff_rank.columns and "EXISTENCIA" in dff_rank.columns:
+            dff_rank = dff_rank[(dff_rank["SO_$"] > 0) | (dff_rank["EXISTENCIA"] > 0)]
+        elif "SO_$" in dff_rank.columns:
+            dff_rank = dff_rank[dff_rank["SO_$"] > 0]
         final_rank = None
         if st.session_state.w_rank_tiendas:
             final_rank = dff_rank.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA TOTAL ($)'})
@@ -1751,46 +1834,68 @@ def view_walmart(df_w):
             df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("OLI",na=False)]
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA OLIVAS ($)'})
         elif st.session_state.w_nutri_top10:
-            mask_946 = (
-                (dff_rank["CODIGO"].astype(str).str.strip() == "750103912014") |
-                (dff_rank["DESC_NORM"].str.contains("NUTRIOLI", na=False) &
-                 dff_rank["DESC_NORM"].str.contains("946", na=False))
+            # ── CORRECCIÓN: filtro EXCLUSIVAMENTE por columna FORMATO (eliminado OR con prefijo tienda)
+            # Normalizar a str para evitar bug de category dtype
+            _base_nutri = df_w.copy()
+            for _col in ["ESTADO", "FORMATO", "TIENDA"]:
+                if _col in _base_nutri.columns:
+                    _base_nutri[_col] = _base_nutri[_col].astype(str).str.strip().str.upper()
+
+            # Filtrar Estado
+            if sel_st_rank:
+                _sel_estados = [s.strip().upper() for s in sel_st_rank]
+                _base_nutri = _base_nutri[_base_nutri["ESTADO"].isin(_sel_estados)]
+
+            # Filtrar Formato — SOLO por columna FORMATO (no OR con prefijo de tienda)
+            if sel_fmt_rank:
+                _sel_fmt = [f.strip().upper() for f in sel_fmt_rank]
+                _base_nutri = _base_nutri[_base_nutri["FORMATO"].isin(_sel_fmt)]
+
+            _desc_up = _base_nutri["DESCRIPCION"].astype(str).str.upper().str.strip()
+            _mask_946 = (
+                _desc_up.str.contains("946", na=False) &
+                _desc_up.str.contains("NUTRIOLI", na=False) &
+                ~_desc_up.str.contains(r"\+", na=False)
             )
-            df_sub = dff_rank[mask_946]
-            # Excluir tiendas sin ninguna actividad (todo en cero)
+            df_sub = _base_nutri[_mask_946]
+            if df_sub.empty:
+                df_sub = _base_nutri[
+                    _desc_up.str.contains("946", na=False) &
+                    _desc_up.str.contains("NUTRIOLI", na=False)
+                ]
+
+            # ── CORRECCIÓN: eliminar filas con SO_$ = 0 Y EXISTENCIA = 0
             if not df_sub.empty:
-                _vta_col = "VTA_S4" if "VTA_S4" in df_sub.columns else None
-                _mask_activo = df_sub["SO_$"] > 0
-                if _vta_col:
-                    _mask_activo = _mask_activo | (df_sub[_vta_col] > 0)
-                _mask_activo = _mask_activo | (df_sub["EXISTENCIA"] > 0)
-                df_sub = df_sub[_mask_activo]
+                _has_so    = "SO_$"       in df_sub.columns
+                _has_exist = "EXISTENCIA" in df_sub.columns
+                if _has_so and _has_exist:
+                    df_sub = df_sub[(df_sub["SO_$"] > 0) | (df_sub["EXISTENCIA"] > 0)]
+                elif _has_so:
+                    df_sub = df_sub[df_sub["SO_$"] > 0]
+
             if not df_sub.empty:
-                cols_disponibles = ["EXISTENCIA", "VTA_S4", "SO_$"]
-                cols_sum = [c for c in cols_disponibles if c in df_sub.columns]
-                final_rank = df_sub.groupby(["FORMATO","TIENDA","DESCRIPCION"])[cols_sum].sum().reset_index()
-                nombres = ["FORMATO", "TIENDA", "PRODUCTO"]
-                if "EXISTENCIA" in cols_sum: nombres.append("INVENTARIO (PZS)")
-                if "VTA_S4"     in cols_sum: nombres.append("VTA SEM ANT (PZS)")
-                if "SO_$"       in cols_sum: nombres.append("SELL OUT ($)")
-                final_rank.columns = nombres
-                # Excluir filas donde todo sea 0 post-groupby
-                _num_cols = [c for c in final_rank.columns if c not in ["FORMATO","TIENDA","PRODUCTO"]]
-                final_rank = final_rank[final_rank[_num_cols].sum(axis=1) > 0]
+                _grp_cols = ["TIENDA","DESCRIPCION"]
+                if not sel_fmt_rank or len(sel_fmt_rank) != 1:
+                    _grp_cols = ["FORMATO"] + _grp_cols
+                _nutri_agg_cols = [c for c in ["EXISTENCIA","SO_SEM_ANT","SO_$"] if c in df_sub.columns]
+                final_rank = df_sub.groupby(_grp_cols)[_nutri_agg_cols].sum().reset_index()
+                _rename = {"FORMATO":"FORMATO","TIENDA":"TIENDA","DESCRIPCION":"PRODUCTO"}
+                _nutri_col_names = [_rename.get(c,c) for c in _grp_cols]
+                if "EXISTENCIA"  in _nutri_agg_cols: _nutri_col_names.append("INVENTARIO")
+                if "SO_SEM_ANT"  in _nutri_agg_cols: _nutri_col_names.append("VTA SEM ANTERIOR ($)")
+                if "SO_$"        in _nutri_agg_cols: _nutri_col_names.append("SELL OUT ($)")
+                final_rank.columns = _nutri_col_names
         if final_rank is not None:
             sort_col = final_rank.columns[-1]
             final_rank = final_rank.sort_values(by=sort_col,ascending=False)
             fmt_dict = {c:"${:,.2f}" for c in final_rank.columns if "($)" in c or "$" in c}
-            if "INVENTARIO (PZS)" in final_rank.columns: fmt_dict["INVENTARIO (PZS)"]="{:,.0f}"
-            if "VTA SEM ANT (PZS)" in final_rank.columns: fmt_dict["VTA SEM ANT (PZS)"]="{:,.0f}"
+            if "INVENTARIO" in final_rank.columns: fmt_dict["INVENTARIO"]="{:,.0f}"
             st.dataframe(final_rank.style.format(fmt_dict), use_container_width=True, hide_index=True, height=auto_height(final_rank))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_rank), file_name="Walmart_Ranking.xlsx", use_container_width=True)
 
 def view_chedraui(df_c):
     df_c_cat = pd.read_json(StringIO(categorize_full_df(df_c.to_json(), "CHEDRAUI")))  # @cache_data TTL 4h
     st.markdown(f"<div class='retailer-header' style='background-color:{RETAILER_COLORS['CHEDRAUI']}'>CHEDRAUI</div>", unsafe_allow_html=True)
-    _upd_c = _get_last_update("CHEDRAUI")
-    st.markdown(f"<p style='text-align:right;color:#888;font-size:0.75rem;margin:-8px 0 4px 0;'>🕐 Última actualización: <b>{_upd_c}</b></p>", unsafe_allow_html=True)
 
     def tog_c(target):
         for v in ['c_neg_zero','c_dias_inv','c_transito']:
@@ -1798,6 +1903,7 @@ def view_chedraui(df_c):
     def set_c_rank(mode):
         for v in ['c_rank_gen','c_rank_pas','c_rank_oli','c_rank_nut']: st.session_state[v]=False
         st.session_state[f'c_rank_{mode.lower()}']=True
+        st.session_state['rank_btn_CHEDRAUI'] = mode.upper()
 
     if df_c is not None:
         for _k in ["c_fil_no","c_fil_ti","c_fil_ed"]:
@@ -1831,7 +1937,6 @@ def view_chedraui(df_c):
             st.session_state["c_fil_no"] = []
 
         with st.container():
-            st.markdown("#### 🔍 Filtros Avanzados")
             c1,c2 = st.columns(2)
 
             _ti_sel = st.session_state.get("c_fil_ti", [])
@@ -1847,16 +1952,6 @@ def view_chedraui(df_c):
             _tienda_opts_c = sorted(_scope["TIENDA"].dropna().unique())
             _no_opts_c     = sorted(_scope["NO_TIENDA"].dropna().unique())
 
-        def _reset_che_filters():
-            for _k in ["c_fil_no","c_fil_ti","c_fil_ed"]:
-                st.session_state[_k] = []
-
-        _cc1, _cc2 = st.columns([8, 2])
-        with _cc1: st.markdown("#### 🔍 Filtros Avanzados")
-        with _cc2: st.button("🗑️ Limpiar filtros", key="btn_reset_che", on_click=_reset_che_filters, use_container_width=True, type="secondary")
-
-        with st.container():
-            c1, c2 = st.columns(2)
             with c1:
                 fil_no  = st.multiselect("No Tienda", _no_opts_c, placeholder="Buscar no. tienda...",
                                          key="c_fil_no", on_change=_on_no_change)
@@ -1868,6 +1963,10 @@ def view_chedraui(df_c):
                                          key="c_fil_ed", on_change=_on_ed_change)
                 fil_art = st.multiselect("Artículo", _us(df_c["ARTICULO"]), placeholder="Seleccionar...")
 
+        def _clear_che():
+            for _k in ["c_fil_no","c_fil_ti","c_fil_ed"]: st.session_state[_k]=[]
+        if any([st.session_state.get("c_fil_no"),st.session_state.get("c_fil_ti"),st.session_state.get("c_fil_ed")]):
+            st.button("🗑️ Borrar filtros", on_click=_clear_che, key="btn_cls_che", type="secondary")
         dff_base = apply_filters(df_c,["NO_TIENDA","TIENDA","ESTADO","CATEGORIA"],[fil_no,fil_ti,fil_ed,fil_cat])
         dff      = apply_filters(dff_base,["ARTICULO"],[fil_art])
 
@@ -1884,7 +1983,7 @@ def view_chedraui(df_c):
         with b2: st.button("📅 DIAS INV",           on_click=tog_c, args=('c_dias_inv',), use_container_width=True, type="primary" if c_dias_inv   else "secondary")
         with b3: st.button("🚚 PEDIDOS EN TRANSITO",on_click=tog_c, args=('c_transito',), use_container_width=True, type="primary" if c_transito_c else "secondary")
 
-        dff_cat = dff_graph.merge(df_c_cat[["Category"]], left_index=True, right_index=True, how="left")
+        dff_cat = dff_graph.merge(df_c_cat[["Category","Category_PIE"]], left_index=True, right_index=True, how="left")
         c_kpi,c_chart = st.columns([1,2])
         with c_kpi:
             total_so = dff_cat['SELL_OUT'].sum()
@@ -1892,7 +1991,9 @@ def view_chedraui(df_c):
         with c_chart:
             _hay_filtros_c = any([fil_no, fil_ti, fil_ed])
             if _hay_filtros_c:
-                pie_df = dff_cat.dropna(subset=['Category']).groupby('Category')['SELL_OUT'].sum().reset_index()
+                _cat_pie_c = "Category_PIE" if "Category_PIE" in dff_cat.columns else "Category"
+                pie_df = dff_cat.dropna(subset=[_cat_pie_c]).groupby(_cat_pie_c)['SELL_OUT'].sum().reset_index()
+                pie_df = pie_df.rename(columns={_cat_pie_c: "Category"})
                 pie_df = pie_df[pie_df['SELL_OUT']>0]
                 if pie_df.empty:
                     _pie_json_c = st.session_state.get("pie_base_chedraui")
@@ -1901,7 +2002,9 @@ def view_chedraui(df_c):
             else:
                 _pie_json_c = st.session_state.get("pie_base_chedraui")
             if not _pie_json_c:
-                _fb = df_c_cat.dropna(subset=["Category"]).groupby("Category")["SELL_OUT"].sum().reset_index()
+                _cat_pie_c2 = "Category_PIE" if "Category_PIE" in df_c_cat.columns else "Category"
+                _fb = df_c_cat.dropna(subset=[_cat_pie_c2]).groupby(_cat_pie_c2)["SELL_OUT"].sum().reset_index()
+                _fb = _fb.rename(columns={_cat_pie_c2: "Category"})
                 _fb = _fb[_fb["SELL_OUT"]>0]
                 _pie_json_c = _fb.to_json() if not _fb.empty else None
             if _pie_json_c:
@@ -1923,7 +2026,7 @@ def view_chedraui(df_c):
                 else:
                     st.info("✅ No hay pedidos en tránsito para los filtros seleccionados.")
             else:
-                st.warning("⚠️ La columna 'Transitos de cedis a tiendas' no se encontró en la base de Chedraui.")
+                log_error("view_chedraui", Exception("Columna transitos no encontrada"))
 
         elif st.session_state.c_dias_inv:
             st.subheader("📅 Reporte Días Inventario")
@@ -1999,8 +2102,10 @@ def view_chedraui(df_c):
                 unsafe_allow_html=True
             )
             
-            disp=dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
-            disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
+            # ── FIX 2: incluir columna CATEGORIA (con BORGES) en Excel exportado
+            _dff_cat_merge = dff.merge(df_c_cat[["Category"]], left_index=True, right_index=True, how="left")
+            disp=_dff_cat_merge[["NO_TIENDA","TIENDA","ARTICULO","Category","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
+            disp.columns=['NO_TIENDA','TIENDA','ARTICULO','CATEGORIA','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_Dias_Inventario.xlsx", use_container_width=True)
 
@@ -2030,8 +2135,10 @@ def view_chedraui(df_c):
 
         else:
             st.caption("📋 Vista: Completa")
-            disp=dff[["NO_TIENDA","TIENDA","ARTICULO","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
-            disp.columns=['NO_TIENDA','TIENDA','ARTICULO','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
+            # ── FIX 2: incluir columna CATEGORIA (con BORGES) en Excel exportado
+            _dff_cat_merge2 = dff.merge(df_c_cat[["Category"]], left_index=True, right_index=True, how="left")
+            disp=_dff_cat_merge2[["NO_TIENDA","TIENDA","ARTICULO","Category","INV_ULT_SEM","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"]].copy()
+            disp.columns=['NO_TIENDA','TIENDA','ARTICULO','CATEGORIA','INV_ULT_SEM','VTA_PROM_DIARIA','DIAS_INV','SELL_OUT']
             st.dataframe(disp.style.format({'INV_ULT_SEM':"{:,.0f}",'VTA_PROM_DIARIA':"{:,.2f}",'DIAS_INV':"{:,.1f}",'SELL_OUT':"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(disp))
             st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(disp), file_name="Chedraui_General.xlsx", use_container_width=True)
 
@@ -2063,7 +2170,7 @@ def view_chedraui(df_c):
                 final_c_rank = final_c_rank.sort_values(by=rank_title,ascending=False)
                 st.dataframe(final_c_rank.style.format({rank_title:"${:,.2f}"}), use_container_width=True, hide_index=True, height=auto_height(final_c_rank))
                 st.download_button("📥 DESCARGAR EXCEL", data=convert_df_to_excel(final_c_rank), file_name="Chedraui_Ranking.xlsx", use_container_width=True)
-            else: st.warning("⚠️ No se encontraron ventas para los productos seleccionados en este estado.")
+            else: st.caption("ℹ️ No se encontraron ventas para los productos seleccionados en este estado.")
 
 # --- 14. EJECUTAR VISTA ACTIVA ---
 inject_button_styles()
@@ -2085,7 +2192,7 @@ st.divider()
 if st.button("🗑️ LIMPIAR MEMORIA / RESET", use_container_width=True, type="secondary", key="reset_btn"):
     if not st.session_state.confirm_reset:
         st.session_state.confirm_reset = True
-        st.error("⚠️ ¡CONFIRMACIÓN REQUERIDA! Haz clic de nuevo para resetear todo.")
+        st.info("⚠️ ¡CONFIRMACIÓN REQUERIDA! Haz clic de nuevo para resetear todo.")
         st.rerun()
     else:
         st.cache_data.clear()
