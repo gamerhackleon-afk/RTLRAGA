@@ -1845,13 +1845,40 @@ def view_walmart(df_w):
             dff_rank = dff_rank[dff_rank["SO_$"] > 0]
         final_rank = None
         if st.session_state.w_rank_tiendas:
-            final_rank = dff_rank.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA TOTAL ($)'})
+            # FIX: agrupar por CODIGO+TIENDA para evitar duplicados de SKU, luego colapsar por tienda
+            final_rank = (
+                dff_rank.groupby(["CODIGO", "TIENDA"])["SO_$"].sum().reset_index()
+                .groupby("TIENDA")["SO_$"].sum().reset_index()
+                .rename(columns={"SO_$": "VENTA TOTAL ($)"})
+            )
         elif st.session_state.w_rank_pastas:
             df_sub = dff_rank[dff_rank["CATEGORIA"].str.contains("PASTAS",na=False)]
-            if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA PASTAS ($)'})
+            if not df_sub.empty:
+                # FIX: agrupar por CODIGO+TIENDA para evitar duplicados de SKU
+                final_rank = (
+                    df_sub.groupby(["CODIGO", "TIENDA"])["SO_$"].sum().reset_index()
+                    .groupby("TIENDA")["SO_$"].sum().reset_index()
+                    .rename(columns={"SO_$": "VENTA PASTAS ($)"})
+                )
         elif st.session_state.w_rank_olivas:
-            df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("OLI",na=False)]
-            if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA OLIVAS ($)'})
+            # FIX DEFINITIVO: filtrar por UPCs exactos de Olivas (columna CR: SO-1$)
+            _OLIVAS_UPCS = [
+                "750103912262","750103912263","750103912201","750103912290",
+                "750103912202","750103912228","750103912728","750103912730",
+                "750103912451",
+            ]
+            _upc_col = "CODIGO" if "CODIGO" in dff_rank.columns else None
+            if _upc_col:
+                df_sub = dff_rank[dff_rank[_upc_col].astype(str).str.strip().isin(_OLIVAS_UPCS)]
+            else:
+                df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("OLI", na=False)]
+            if not df_sub.empty:
+                # Agrupar por CODIGO+TIENDA para evitar duplicados de SKU, luego colapsar por tienda
+                final_rank = (
+                    df_sub.groupby(["CODIGO", "TIENDA"])["SO_$"].sum().reset_index()
+                    .groupby("TIENDA")["SO_$"].sum().reset_index()
+                    .rename(columns={"SO_$": "VENTA OLIVAS ($)"})
+                )
         elif st.session_state.w_nutri_top10:
             # ── CORRECCIÓN: filtro EXCLUSIVAMENTE por columna FORMATO (eliminado OR con prefijo tienda)
             # Normalizar a str para evitar bug de category dtype
@@ -1897,7 +1924,12 @@ def view_walmart(df_w):
                 if not sel_fmt_rank or len(sel_fmt_rank) != 1:
                     _grp_cols = ["FORMATO"] + _grp_cols
                 _nutri_agg_cols = [c for c in ["EXISTENCIA","SO_SEM_ANT","SO_$"] if c in df_sub.columns]
-                final_rank = df_sub.groupby(_grp_cols)[_nutri_agg_cols].sum().reset_index()
+                # FIX: deduplicar por CODIGO+TIENDA antes de agrupar para evitar SKU duplicados
+                if "CODIGO" in df_sub.columns:
+                    _nutri_dedup = df_sub.groupby(["CODIGO"] + _grp_cols)[_nutri_agg_cols].sum().reset_index()
+                    final_rank = _nutri_dedup.groupby(_grp_cols)[_nutri_agg_cols].sum().reset_index()
+                else:
+                    final_rank = df_sub.groupby(_grp_cols)[_nutri_agg_cols].sum().reset_index()
                 _rename = {"FORMATO":"FORMATO","TIENDA":"TIENDA","DESCRIPCION":"PRODUCTO"}
                 _nutri_col_names = [_rename.get(c,c) for c in _grp_cols]
                 if "EXISTENCIA"  in _nutri_agg_cols: _nutri_col_names.append("INVENTARIO")
