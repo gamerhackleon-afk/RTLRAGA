@@ -6,6 +6,7 @@ import time
 import requests
 import plotly.express as px
 import urllib.parse
+import os
 import re
 from io import BytesIO, StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -145,8 +146,16 @@ for _v in _view_vars:
     st.session_state.setdefault(_v, False)
 
 # --- 3. FUNCIONES UTILITARIAS ---
+def normalize_desc(series):
+    return (
+        series.fillna("")
+        .str.upper()
+        .str.replace(" ", "", regex=False)
+        .str.replace("&NBSP;", "", regex=False)
+    )
+
 def safe_mean(series):
-    return series.mean() if not series.empty else 0
+    return series.values.mean() if len(series) else 0
 
 def apply_filters(df, filter_cols_or_dict, selections=None):
     """
@@ -165,8 +174,9 @@ def apply_filters(df, filter_cols_or_dict, selections=None):
             if str(s).strip().upper() not in ("", "NAN", "NONE", "NAT")
         ]
         if clean_sel and col in df.columns:
-            col_series = df[col].astype(str).str.strip().str.upper()
-            mask &= col_series.isin(set(clean_sel)).values
+            col_series = df[col]  # ya normalizado en el loader
+            sel_set = set(clean_sel)
+            mask &= col_series.isin(sel_set).values
     return df[mask]
 
 def get_kpi_mean(df, desc_col, days_col, pattern):
@@ -187,11 +197,11 @@ def get_kpi_sum_by_upc(df, upc, value_col="SO_$"):
             return 0
         if "CODIGO" not in df.columns:
             return 0
-        df_upc = df[df["CODIGO"].astype(str).str.strip() == str(upc).strip()]
+        df_upc = df[df["CODIGO"] == str(upc).strip()]
         if df_upc.empty:
             return 0
         # Evita duplicidad por tienda
-        return df_upc.groupby(["CODIGO", "TIENDA"])[value_col].sum().sum()
+        return df_upc.groupby(["CODIGO", "TIENDA"], sort=False)[value_col].sum().to_numpy().sum()
     except Exception as e:
         log_error("get_kpi_sum_by_upc", e)
         return 0
@@ -200,25 +210,25 @@ def get_kpi_sum_exact_desc(df, desc, value_col="SO_$"):
     """Calcula suma exacta usando descripción completa por si no hay UPC"""
     if "DESCRIPCION" not in df.columns:
         return 0
-    mask = df["DESCRIPCION"].astype(str).str.strip().str.upper() == str(desc).strip().upper()
+    mask = df["DESCRIPCION"] == str(desc).strip().upper()
     df_desc = df[mask]
     if df_desc.empty:
         return 0
     # Evita duplicidad por tienda
-    return df_desc.groupby(["DESCRIPCION", "TIENDA"])[value_col].sum().sum()
+    return df_desc.groupby(["DESCRIPCION", "TIENDA"], sort=False)[value_col].sum().to_numpy().sum()
 
 def get_kpi_mean_by_upc(df, upc, value_col="DIAS_INV"):
     """Promedio exacto por código UPC para métricas no sumables (como Días de Inventario)"""
     if "CODIGO" not in df.columns:
         return 0
-    mask = df["CODIGO"].astype(str).str.strip() == str(upc).strip()
+    mask = df["CODIGO"] == str(upc).strip()
     return safe_mean(df.loc[mask, value_col])
 
 def get_kpi_mean_exact_desc(df, desc, value_col="DIAS_INV"):
     """Promedio exacto por descripción completa"""
     if "DESCRIPCION" not in df.columns:
         return 0
-    mask = df["DESCRIPCION"].astype(str).str.strip().str.upper() == str(desc).strip().upper()
+    mask = df["DESCRIPCION"] == str(desc).strip().upper()
     return safe_mean(df.loc[mask, value_col])
 # ----------------------------------------------------------------
 
@@ -424,7 +434,7 @@ def download_file_fast(url: str):
             response = requests.get(_url, **_req_kwargs)
             response.raise_for_status()
             buf = BytesIO()
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
+            for chunk in response.iter_content(chunk_size=4 * 1024 * 1024):
                 if chunk:
                     buf.write(chunk)
             raw = buf.getvalue()
@@ -498,16 +508,18 @@ def clean_text(series):
     return (
         series.fillna("")
         .astype(str)
-        .str.replace(r"\s+", " ", regex=True)
+        .str.replace("  ", " ", regex=False)
         .str.strip()
         .str.upper()
     )
 
 def optimize_floats(df):
-    for col in df.select_dtypes(include=['float64']).columns:
-        df[col] = df[col].astype('float32')
-    for col in df.select_dtypes(include=['int64']).columns:
-        df[col] = df[col].astype('int32')
+    float_cols = df.columns[df.dtypes == 'float64']
+    int_cols   = df.columns[df.dtypes == 'int64']
+    if len(float_cols):
+        df[float_cols] = df[float_cols].astype('float32')
+    if len(int_cols):
+        df[int_cols] = df[int_cols].astype('int32')
     df = df.convert_dtypes(convert_floating=False)
     return df
 def _str_cols(df, cols):
@@ -524,7 +536,7 @@ def load_sor(path):
         if source is None: return None
         
         try:
-            df = pd.read_excel(source, engine='calamine')
+            df = pd.read_excel(source, engine='calamine', dtype_backend='numpy_nullable')
         except Exception:
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
@@ -570,7 +582,9 @@ def load_sor(path):
         
         df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
         _cols_num = [c for c in ["DIAS_INV","INV_CAJAS","PROM_SEM_CAJAS","SO_$","SO_4SEM","PEDIDOS","CANTIDAD_PZS"] if c in df.columns]
-        df[_cols_num] = df[_cols_num].apply(pd.to_numeric, errors='coerce').fillna(0)
+        for _c in _cols_num:
+            df[_c] = pd.to_numeric(df[_c], errors='coerce')
+        df[_cols_num] = df[_cols_num].fillna(0)
             
         df["FECHA_ENTREGA"] = df["FECHA_ENTREGA"].fillna("").astype(str).replace("nan", "")
         df['SIN_VTA'] = (df['SO_4SEM'] == 0)
@@ -582,7 +596,7 @@ def load_sor(path):
         df["TIENDA"] = clean_text(df["TIENDA"])
         df["ESTADO"] = clean_text(df["ESTADO"])
         
-        df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
+        df["DESC_NORM"] = normalize_desc(df["DESCRIPCION"])
         return optimize_floats(df)
     except Exception as e:
         log_error("load_sor", e)
@@ -595,7 +609,7 @@ def load_wal(path):
         if source is None: return None
         
         try:
-            df = pd.read_excel(source, engine='calamine')
+            df = pd.read_excel(source, engine='calamine', dtype_backend='numpy_nullable')
         except Exception:
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
@@ -625,7 +639,9 @@ def load_wal(path):
 
         df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r'\.0*$', '', regex=True)
         _cols_num = [c for c in ["DIAS_INV","EXISTENCIA","VTA_S1","VTA_S2","VTA_S3","VTA_S4","SO_$","SO_CORRIENDO"] if c in df.columns]
-        df[_cols_num] = df[_cols_num].apply(pd.to_numeric, errors='coerce').fillna(0)
+        for _c in _cols_num:
+            df[_c] = pd.to_numeric(df[_c], errors='coerce')
+        df[_cols_num] = df[_cols_num].fillna(0)
             
         df['PROM_PZS_MENSUAL'] = df[["VTA_S1", "VTA_S2", "VTA_S3", "VTA_S4"]].mean(axis=1)
         df = _str_cols(df, ["CODIGO", "DESCRIPCION", "CATEGORIA", "ESTADO", "TIENDA", "FORMATO", "MARCA"])
@@ -635,7 +651,7 @@ def load_wal(path):
         df["ESTADO"] = clean_text(df["ESTADO"])
         df["FORMATO"] = clean_text(df["FORMATO"])
         
-        df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace(" ", "", regex=False).str.replace("&NBSP;", "", regex=False)
+        df["DESC_NORM"] = normalize_desc(df["DESCRIPCION"])
         # ── CORRECCIÓN: NO convertir a category TIENDA/ESTADO/FORMATO — rompe apply_filters
         for _cat_col in ["MARCA", "CATEGORIA"]:
             if _cat_col in df.columns:
@@ -652,7 +668,7 @@ def load_che(path):
         if source is None: return None
         
         try:
-            df = pd.read_excel(source, engine='calamine')
+            df = pd.read_excel(source, engine='calamine', dtype_backend='numpy_nullable')
         except Exception:
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
@@ -693,7 +709,9 @@ def load_che(path):
             df["CODIGO"] = ""
             
         _cols_num = [c for c in ["INV_ULT_SEM","TRANSITO_CEDIS","VTA_PROM_DIARIA","DIAS_INV","SELL_OUT"] if c in df.columns]
-        df[_cols_num] = df[_cols_num].apply(pd.to_numeric, errors='coerce').fillna(0)
+        for _c in _cols_num:
+            df[_c] = pd.to_numeric(df[_c], errors='coerce')
+        df[_cols_num] = df[_cols_num].fillna(0)
             
         df = _str_cols(df, ["ESTADO", "COORDINADOR", "EJECUTIVO", "PROMOTOR", "CATEGORIA", "NO_TIENDA", "TIENDA", "ARTICULO", "CODIGO"])
         
@@ -940,7 +958,7 @@ def load_all_parallel():
     done_dl = set()
     n = len(keys)
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 4)) as executor:
         future_map = {executor.submit(_download_raw, k): k for k in keys}
         for future in as_completed(future_map):
             key, buf, err = future.result()
@@ -958,7 +976,7 @@ def load_all_parallel():
     done_parse = set()
     keys_to_parse = [k for k in keys if k in raw_buffers]
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 4)) as executor:
         future_map = {executor.submit(_parse_raw, k, raw_buffers[k]): k for k in keys_to_parse}
         for future in as_completed(future_map):
             key, df, err = future.result()
@@ -1347,7 +1365,7 @@ if not st.session_state.data_loaded:
             except Exception as e:
                 return k, None, str(e)
 
-        with ThreadPoolExecutor(max_workers=4) as _ex:
+        with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 4)) as _ex:
             _fmap = {_ex.submit(_load_one, k): k for k in _keys}
             for _fut in as_completed(_fmap):
                 _k = _fmap[_fut]
