@@ -161,7 +161,15 @@ def apply_filters(df, filter_cols_or_dict, selections=None):
     """
     Acepta dict {col: [vals]} o listas paralelas.
     Limpia valores vacios/NAN antes de filtrar — elimina filtros fantasma.
+    OPT D: Early-return si no hay selecciones activas (evita O(n) innecesario).
     """
+    # Early-return: si selections es lista vacía o todos None/vacíos, retornar sin iterar
+    if selections is not None and not any(
+        str(s).strip().upper() not in ("", "NAN", "NONE", "NAT")
+        for sel in (selections if isinstance(selections, list) else [])
+        for s in (sel or [])
+    ):
+        return df
     mask = np.ones(len(df), dtype=bool)
     if isinstance(filter_cols_or_dict, dict):
         items = filter_cols_or_dict.items()
@@ -1604,7 +1612,7 @@ def view_soriana(df_s):
             _hay_filtros_s = any([fil_nda, fil_nom, fil_cd, fil_edo])
             if _hay_filtros_s:
                 _cat_pie_s = "Category_PIE" if "Category_PIE" in dff_cat.columns else "Category"
-                pie_df = dff_cat.dropna(subset=[_cat_pie_s]).groupby(_cat_pie_s)['SO_$'].sum().reset_index()
+                pie_df = dff_cat[[_cat_pie_s, 'SO_$']].dropna(subset=[_cat_pie_s]).groupby(_cat_pie_s)['SO_$'].sum().reset_index()
                 pie_df = pie_df.rename(columns={_cat_pie_s: "Category"})
                 pie_df = pie_df[pie_df['SO_$']>0]
                 if pie_df.empty:
@@ -1615,7 +1623,7 @@ def view_soriana(df_s):
                 _pie_json_s = st.session_state.get("pie_base_soriana")
             if not _pie_json_s:
                 _cat_pie_s2 = "Category_PIE" if "Category_PIE" in df_s_cat.columns else "Category"
-                _fb = df_s_cat.dropna(subset=[_cat_pie_s2]).groupby(_cat_pie_s2)["SO_$"].sum().reset_index()
+                _fb = df_s_cat[[_cat_pie_s2, "SO_$"]].dropna(subset=[_cat_pie_s2]).groupby(_cat_pie_s2)["SO_$"].sum().reset_index()
                 _fb = _fb.rename(columns={_cat_pie_s2: "Category"})
                 _fb = _fb[_fb["SO_$"]>0]
                 _pie_json_s = _fb.to_json() if not _fb.empty else None
@@ -1908,7 +1916,7 @@ def view_walmart(df_w):
             _hay_filtros_w = any([sel_store, sel_state, sel_fmt])
             if _hay_filtros_w:
                 _cat_pie_w = "Category_PIE" if "Category_PIE" in dff_cat.columns else "Category"
-                pie_df = dff_cat.dropna(subset=[_cat_pie_w]).groupby(_cat_pie_w)['SO_$'].sum().reset_index()
+                pie_df = dff_cat[[_cat_pie_w, 'SO_$']].dropna(subset=[_cat_pie_w]).groupby(_cat_pie_w)['SO_$'].sum().reset_index()
                 pie_df = pie_df.rename(columns={_cat_pie_w: "Category"})
                 pie_df = pie_df[pie_df['SO_$']>0]
                 if pie_df.empty:
@@ -1919,7 +1927,7 @@ def view_walmart(df_w):
                 _cat_pie_w2 = "Category_PIE" if "Category_PIE" in df_w_cat.columns else "Category"
                 _fb = df_w_cat.dropna(subset=[_cat_pie_w2]).copy()
                 _fb = _fb.loc[_fb.index.isin(df_w.index)]
-                _fb = _fb.groupby(_cat_pie_w2)["SO_$"].sum().reset_index()
+                _fb = _fb[[_cat_pie_w2, "SO_$"]].groupby(_cat_pie_w2)["SO_$"].sum().reset_index()
                 _fb = _fb.rename(columns={_cat_pie_w2: "Category"})
                 _fb = _fb[_fb["SO_$"]>0]
                 _pie_json_w = _fb.to_json() if not _fb.empty else None
@@ -2046,7 +2054,11 @@ def view_walmart(df_w):
             df_sub = dff_rank[dff_rank["CATEGORIA"].str.contains("PASTAS",na=False)]
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA PASTAS ($)'})
         elif st.session_state.w_rank_olivas:
-            df_sub = dff_rank[dff_rank["DESC_NORM"].str.contains("OLI",na=False)]
+            # FIX: filtro preciso línea OLI — DESC_NORM empieza con "OLI" O contiene "OLIVA"
+            # Corrige bug donde NUTRIOLI soya (946ML, 400ML, ANTIGOTEO, etc.) se sumaba
+            # en el ranking de Olivas por compartir las letras "OLI" en su nombre normalizado
+            _dn = dff_rank["DESC_NORM"]
+            df_sub = dff_rank[_dn.str.startswith("OLI", na=False) | _dn.str.contains("OLIVA", na=False)]
             if not df_sub.empty: final_rank = df_sub.groupby("TIENDA")['SO_$'].sum().reset_index().rename(columns={'SO_$':'VENTA OLIVAS ($)'})
         elif st.session_state.w_nutri_top10:
             # ── CORRECCIÓN: filtro EXCLUSIVAMENTE por columna FORMATO (eliminado OR con prefijo tienda)
@@ -2207,7 +2219,7 @@ def view_chedraui(df_c):
             _hay_filtros_c = any([fil_no, fil_ti, fil_ed])
             if _hay_filtros_c:
                 _cat_pie_c = "Category_PIE" if "Category_PIE" in dff_cat.columns else "Category"
-                pie_df = dff_cat.dropna(subset=[_cat_pie_c]).groupby(_cat_pie_c)['SELL_OUT'].sum().reset_index()
+                pie_df = dff_cat[[_cat_pie_c, 'SELL_OUT']].dropna(subset=[_cat_pie_c]).groupby(_cat_pie_c)['SELL_OUT'].sum().reset_index()
                 pie_df = pie_df.rename(columns={_cat_pie_c: "Category"})
                 pie_df = pie_df[pie_df['SELL_OUT']>0]
                 if pie_df.empty:
@@ -2218,7 +2230,7 @@ def view_chedraui(df_c):
                 _pie_json_c = st.session_state.get("pie_base_chedraui")
             if not _pie_json_c:
                 _cat_pie_c2 = "Category_PIE" if "Category_PIE" in df_c_cat.columns else "Category"
-                _fb = df_c_cat.dropna(subset=[_cat_pie_c2]).groupby(_cat_pie_c2)["SELL_OUT"].sum().reset_index()
+                _fb = df_c_cat[[_cat_pie_c2, "SELL_OUT"]].dropna(subset=[_cat_pie_c2]).groupby(_cat_pie_c2)["SELL_OUT"].sum().reset_index()
                 _fb = _fb.rename(columns={_cat_pie_c2: "Category"})
                 _fb = _fb[_fb["SELL_OUT"]>0]
                 _pie_json_c = _fb.to_json() if not _fb.empty else None
