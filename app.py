@@ -2449,39 +2449,62 @@ def view_fresko(df_f):
         if _k not in st.session_state:
             st.session_state[_k] = []
 
-    # ── 3. FUNCIÓN DE OPCIONES DINÁMICAS ─────────────────────────────────────
-    # Lee session_state, filtra el df, devuelve opciones disponibles.
-    # NUNCA escribe en session_state — evita StreamlitAPIException.
-    # CATEGORÍA excluida intencionalmente (filtro independiente).
-    def get_filtered_options():
+    # ── 3. CASCADEO BIDIRECCIONAL ─────────────────────────────────────────────
+    # Columnas que participan en el cascadeo (en orden de jerarquía natural)
+    _CASCADE_PAIRS = [
+        ("NOTIENDA",    "f_fil_tda"),
+        ("ESTADO",      "f_fil_ed"),
+        ("TIENDA",      "f_fil_ti"),
+        ("FORMATO",     "f_fil_fmt"),
+        ("COORDINADOR", "f_fil_crd"),
+        ("EJECUTIVO",   "f_fil_ej"),
+        ("PROMOTOR",    "f_fil_pr"),
+    ]
+
+    def get_scope_excluding(exclude_key: str) -> pd.DataFrame:
+        """
+        Devuelve el df filtrado por TODOS los filtros activos
+        EXCEPTO el del filtro `exclude_key`.
+        Esto permite calcular las opciones disponibles para ese filtro
+        dado el resto de selecciones activas (cascadeo real bidireccional).
+        """
         dff = df_f.copy()
-        for col, key in [
-            ("NOTIENDA",    "f_fil_tda"),
-            ("TIENDA",      "f_fil_ti"),
-            ("ESTADO",      "f_fil_ed"),
-            ("FORMATO",     "f_fil_fmt"),
-            ("COORDINADOR", "f_fil_crd"),
-            ("EJECUTIVO",   "f_fil_ej"),
-            ("PROMOTOR",    "f_fil_pr"),
-        ]:
+        for col, key in _CASCADE_PAIRS:
+            if key == exclude_key:
+                continue
             vals = st.session_state.get(key, [])
             if vals and col in dff.columns:
                 dff = dff[dff[col].isin(set(vals))]
         return dff
 
-    # ── 4. AUTO-SELECCIÓN CUANDO HAY 1 SOLA OPCIÓN ───────────────────────────
-    # Usa el parámetro `default=` del multiselect — NO toca session_state.
-    # Caso 1: 1 opción  → default = esa opción  (auto-selección tipo Power BI)
-    # Caso 2: N opciones → default = lo que el usuario ya tenía seleccionado
-    def auto_select(options, key):
-        if len(options) == 1:
-            return options          # auto-selecciona la única opción disponible
-        current = st.session_state.get(key, [])
-        # Mantener solo valores que siguen siendo válidos en el scope actual
-        valid_set = set(options)
-        return [v for v in current if v in valid_set]
+    def get_all_filtered() -> pd.DataFrame:
+        """df filtrado por TODOS los filtros activos (para el scope de Artículo y datos)."""
+        dff = df_f.copy()
+        for col, key in _CASCADE_PAIRS:
+            vals = st.session_state.get(key, [])
+            if vals and col in dff.columns:
+                dff = dff[dff[col].isin(set(vals))]
+        return dff
 
-    # ── 5. HEADER ─────────────────────────────────────────────────────────────
+    def cascade_default(options: list, key: str) -> list:
+        """
+        Lógica de default para cada multiselect con cascadeo:
+        - Si hay exactamente 1 opción disponible → auto-seleccionar (Power BI style).
+        - Si el usuario ya tenía selección manual con 2+ items → respetar sin forzar.
+        - Si hay cascadeo que resulta en 2+ opciones → mostrar opciones disponibles
+          pero NO forzar selección (el usuario elige). Los valores previos válidos
+          se mantienen si aún están en las opciones.
+        """
+        current = st.session_state.get(key, [])
+        valid_set = set(options)
+        # Si hay exactamente 1 opción, auto-seleccionar siempre
+        if len(options) == 1:
+            return options
+        # Mantener solo los valores actuales que siguen siendo válidos
+        valid_current = [v for v in current if v in valid_set]
+        return valid_current
+
+    # ── 4. HEADER ─────────────────────────────────────────────────────────────
     st.markdown(
         "<div style='background:linear-gradient(135deg,#B3FF00,#8FCC00);"
         "border-radius:10px;padding:10px 18px;font-weight:700;color:#1a1a1a;"
@@ -2489,7 +2512,7 @@ def view_fresko(df_f):
         unsafe_allow_html=True
     )
 
-    # ── 6. BOTÓN BORRAR — ANTES de widgets (evita StreamlitAPIException) ──────
+    # ── 5. BOTÓN BORRAR — ANTES de widgets (evita StreamlitAPIException) ──────
     hay_filtros = any(st.session_state.get(k) for k in _FKEYS)
     if hay_filtros:
         if st.button("🗑️ Borrar filtros", key="btn_cls_fre", type="secondary"):
@@ -2497,75 +2520,80 @@ def view_fresko(df_f):
                 st.session_state[_k] = []
             st.rerun()
 
-    # ── 7. CALCULAR SCOPE Y OPCIONES ──────────────────────────────────────────
-    scope = get_filtered_options()
+    # ── 6. CALCULAR OPCIONES POR CASCADEO BIDIRECCIONAL ───────────────────────
+    # Para cada filtro, las opciones se calculan excluyendo su propio filtro
+    # pero aplicando todos los demás → cascadeo verdadero en cualquier dirección.
+    tda_opts = sorted(get_scope_excluding("f_fil_tda")["NOTIENDA"].dropna().unique().tolist())    if "NOTIENDA"    in df_f.columns else []
+    ed_opts  = sorted(get_scope_excluding("f_fil_ed")["ESTADO"].dropna().unique().tolist())       if "ESTADO"      in df_f.columns else []
+    ti_opts  = sorted(get_scope_excluding("f_fil_ti")["TIENDA"].dropna().unique().tolist())       if "TIENDA"      in df_f.columns else []
+    fmt_opts = sorted(get_scope_excluding("f_fil_fmt")["FORMATO"].dropna().unique().tolist())     if "FORMATO"     in df_f.columns else []
+    crd_opts = sorted(get_scope_excluding("f_fil_crd")["COORDINADOR"].dropna().unique().tolist()) if "COORDINADOR" in df_f.columns else []
+    ej_opts  = sorted(get_scope_excluding("f_fil_ej")["EJECUTIVO"].dropna().unique().tolist())    if "EJECUTIVO"   in df_f.columns else []
+    pr_opts  = sorted(get_scope_excluding("f_fil_pr")["PROMOTOR"].dropna().unique().tolist())     if "PROMOTOR"    in df_f.columns else []
+    # Categoría: siempre del dataset completo (filtro independiente)
+    cat_opts = sorted(df_f["CATEGORIA"].dropna().unique().tolist())                               if "CATEGORIA"   in df_f.columns else []
+    # Artículo: refinado por scope completo
+    _scope_all = get_all_filtered()
+    art_opts = sorted(_scope_all[_desc_col].dropna().unique().tolist()) if _desc_col and _desc_col in _scope_all.columns else []
 
-    tda_opts = sorted(scope["NOTIENDA"].dropna().unique().tolist())    if "NOTIENDA"     in scope.columns else []
-    ti_opts  = sorted(scope["TIENDA"].dropna().unique().tolist())      if "TIENDA"       in scope.columns else []
-    ed_opts  = sorted(scope["ESTADO"].dropna().unique().tolist())      if "ESTADO"       in scope.columns else []
-    fmt_opts = sorted(scope["FORMATO"].dropna().unique().tolist())     if "FORMATO"      in scope.columns else []
-    crd_opts = sorted(scope["COORDINADOR"].dropna().unique().tolist()) if "COORDINADOR"  in scope.columns else []
-    ej_opts  = sorted(scope["EJECUTIVO"].dropna().unique().tolist())   if "EJECUTIVO"    in scope.columns else []
-    pr_opts  = sorted(scope["PROMOTOR"].dropna().unique().tolist())    if "PROMOTOR"     in scope.columns else []
-    # Categoría: siempre del dataset completo (independiente, sin auto-selección)
-    cat_opts = sorted(df_f["CATEGORIA"].dropna().unique().tolist())    if "CATEGORIA"    in df_f.columns else []
-    # Artículo: opciones refinadas por scope, sin auto-selección
-    art_opts = sorted(scope[_desc_col].dropna().unique().tolist())     if _desc_col and _desc_col in scope.columns else []
-
-    # ── 8. WIDGETS CON AUTO-SELECCIÓN INTELIGENTE ────────────────────────────
+    # ── 7. WIDGETS CON CASCADEO BIDIRECCIONAL ────────────────────────────────
+    # El usuario puede seleccionar cualquier filtro libremente.
+    # Si selecciona 1 item en cualquier filtro, los demás muestran solo opciones
+    # relacionadas. Si hay 2+ opciones resultantes, el usuario elige manualmente.
+    # Si el usuario pone múltiples items manualmente, se respetan sin forzar cascadeo.
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         fil_tda = st.multiselect(
             "# Tienda", tda_opts,
-            default=auto_select(tda_opts, "f_fil_tda"),
+            default=cascade_default(tda_opts, "f_fil_tda"),
             key="f_fil_tda", placeholder="Buscar #..."
         )
         fil_ed = st.multiselect(
             "Estado", ed_opts,
-            default=auto_select(ed_opts, "f_fil_ed"),
+            default=cascade_default(ed_opts, "f_fil_ed"),
             key="f_fil_ed", placeholder="Seleccionar..."
         )
     with c2:
         fil_ti = st.multiselect(
             "Tienda", ti_opts,
-            default=auto_select(ti_opts, "f_fil_ti"),
+            default=cascade_default(ti_opts, "f_fil_ti"),
             key="f_fil_ti", placeholder="Buscar tienda..."
         )
         fil_fmt = st.multiselect(
             "Formato", fmt_opts,
-            default=auto_select(fmt_opts, "f_fil_fmt"),
+            default=cascade_default(fmt_opts, "f_fil_fmt"),
             key="f_fil_fmt", placeholder="Seleccionar..."
         )
     with c3:
         fil_crd = st.multiselect(
             "Coordinador", crd_opts,
-            default=auto_select(crd_opts, "f_fil_crd"),
+            default=cascade_default(crd_opts, "f_fil_crd"),
             key="f_fil_crd", placeholder="Seleccionar..."
         )
         fil_ej = st.multiselect(
             "Ejecutivo", ej_opts,
-            default=auto_select(ej_opts, "f_fil_ej"),
+            default=cascade_default(ej_opts, "f_fil_ej"),
             key="f_fil_ej", placeholder="Seleccionar..."
         )
     with c4:
         fil_pr = st.multiselect(
             "Promotor", pr_opts,
-            default=auto_select(pr_opts, "f_fil_pr"),
+            default=cascade_default(pr_opts, "f_fil_pr"),
             key="f_fil_pr", placeholder="Seleccionar..."
         )
-        # Categoría: sin auto_select — el usuario siempre elige manualmente
+        # Categoría: sin cascadeo — el usuario siempre elige manualmente
         fil_cat = st.multiselect(
             "🏷️ Categoría", cat_opts,
             key="f_fil_cat", placeholder="Todas las categorías..."
         )
 
-    # Artículo — fila completa, sin auto-selección
+    # Artículo — fila completa, sin cascadeo forzado
     fil_art = st.multiselect(
         "Artículo", art_opts,
         key="f_fil_art", placeholder="Buscar artículo..."
     )
 
-    # ── 9. APLICAR FILTROS FINALES ────────────────────────────────────────────
+    # ── 8. APLICAR FILTROS FINALES ────────────────────────────────────────────
     _fcols = ["NOTIENDA","TIENDA","ESTADO","FORMATO","COORDINADOR","EJECUTIVO","PROMOTOR","CATEGORIA"]
     if _desc_col:
         _fcols.append(_desc_col)
