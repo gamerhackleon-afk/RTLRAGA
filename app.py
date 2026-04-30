@@ -2449,6 +2449,43 @@ def view_fresko(df_f):
         if _k not in st.session_state:
             st.session_state[_k] = []
 
+    # ── 2b. AUTO-FILL: al cambiar #Tienda o Tienda rellena los demás filtros ──
+    def _auto_fill_from(col_filter: str, col_key: str, fill_map: list):
+        """Detecta si cambió col_key y rellena automáticamente los campos de fill_map."""
+        _curr     = st.session_state.get(col_key, [])
+        _prev_key = f"_prev_{col_key}"
+        _prev     = st.session_state.get(_prev_key, [])
+        if set(_curr) != set(_prev):
+            st.session_state[_prev_key] = list(_curr)
+            if _curr and col_filter in df_f.columns:
+                _sub = df_f[df_f[col_filter].isin(set(_curr))]
+                if not _sub.empty:
+                    for _acol, _akey in fill_map:
+                        if _acol in _sub.columns:
+                            st.session_state[_akey] = sorted(
+                                _sub[_acol].dropna().unique().tolist()
+                            )
+
+    # Auto-fill desde # Tienda (NOTIENDA) → rellena Estado, Tienda, Formato, Coordinador, Ejecutivo, Promotor
+    _auto_fill_from("NOTIENDA", "f_fil_tda", [
+        ("ESTADO",      "f_fil_ed"),
+        ("TIENDA",      "f_fil_ti"),
+        ("FORMATO",     "f_fil_fmt"),
+        ("COORDINADOR", "f_fil_crd"),
+        ("EJECUTIVO",   "f_fil_ej"),
+        ("PROMOTOR",    "f_fil_pr"),
+    ])
+
+    # Auto-fill desde Tienda nombre → rellena #Tienda, Estado, Formato, Coordinador, Ejecutivo, Promotor
+    _auto_fill_from("TIENDA", "f_fil_ti", [
+        ("NOTIENDA",    "f_fil_tda"),
+        ("ESTADO",      "f_fil_ed"),
+        ("FORMATO",     "f_fil_fmt"),
+        ("COORDINADOR", "f_fil_crd"),
+        ("EJECUTIVO",   "f_fil_ej"),
+        ("PROMOTOR",    "f_fil_pr"),
+    ])
+
     # ── 3. CASCADEO BIDIRECCIONAL ─────────────────────────────────────────────
     # Columnas que participan en el cascadeo (en orden de jerarquía natural)
     _CASCADE_PAIRS = [
