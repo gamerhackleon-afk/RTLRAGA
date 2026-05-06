@@ -14,40 +14,17 @@ _ensure_pkg("python_calamine")
 import pandas as pd
 import numpy as np
 import time
-import re
-import unicodedata
 import requests
 import plotly.express as px
 import urllib.parse
 import os
 import re
-import unicodedata
 from io import BytesIO, StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import logging
 
 logging.basicConfig(level=logging.INFO)
-
-# ─────────────────────────────────────────────────────────────
-# NORMALIZADOR UNIVERSAL DE COLUMNAS
-# ─────────────────────────────────────────────────────────────
-def normalize_column_name(col):
-
-    if pd.isna(col):
-        return ""
-
-    col = str(col)
-
-    col = unicodedata.normalize('NFKD', col)
-    col = ''.join(c for c in col if not unicodedata.combining(c))
-
-    col = col.upper()
-
-    col = re.sub(r'\s+', ' ', col).strip()
-
-    return col
-
 
 def log_error(context: str, error: Exception):
     logging.error(f"{context} → {str(error)}")
@@ -227,7 +204,8 @@ def apply_filters(df, filter_cols_or_dict, selections=None):
                 df[col]
                 .fillna("")
                 .astype(str)
-                .apply(normalize_column_name)
+                .str.strip()
+                .str.upper()
             )
 
             sel_set = set(clean_sel)
@@ -531,70 +509,65 @@ def set_retailer(retailer_name):
 # --- 4. MOTOR INTELIGENTE DE LECTURA DE COLUMNAS ---
 def find_col(df, candidates):
     """
-    Búsqueda robusta de columnas.
+    Busca una columna en df.columns entre los candidatos.
     Soporta:
-    - mayúsculas/minúsculas
-    - acentos
-    - espacios
-    - datetime
-    - coincidencias parciales
+      - "NombreExacto"    -> búsqueda exacta (case-insensitive, strip)
+      - "~patron_regex"   -> búsqueda por regex en los headers (prefijo ~)
+    Fallback: partial match para compatibilidad.
     """
+    import re as _re
+    cols_up = {str(c).strip().upper(): c for c in df.columns}
 
-    normalized_cols = {
-        normalize_column_name(c): c
-        for c in df.columns
-    }
+    for name in candidates:
+        sname = str(name)
+        if sname.startswith("~"):
+            pattern = sname[1:]
+            for key, col in cols_up.items():
+                if _re.search(pattern, key, _re.IGNORECASE):
+                    return col
+        else:
+            if sname.upper() in cols_up:
+                return cols_up[sname.upper()]
 
-    # MATCH EXACTO
-    for candidate in candidates:
-
-        norm_candidate = normalize_column_name(candidate)
-
-        if norm_candidate in normalized_cols:
-            return normalized_cols[norm_candidate]
-
-    # MATCH PARCIAL
-    for candidate in candidates:
-
-        norm_candidate = normalize_column_name(candidate)
-
-        for norm_col, real_col in normalized_cols.items():
-            if norm_candidate in norm_col:
-                return real_col
-
+    # Fallback partial match (sin regex)
+    for name in candidates:
+        sname = str(name)
+        if sname.startswith("~"):
+            continue
+        nu = sname.upper()
+        for key, col in cols_up.items():
+            if nu in key:
+                return col
     return None
 def validate_columns(df, retailer, required_cols_dict):
+    """
+    Mapea columnas del Excel a nombres internos.
+    Claves con prefijo '?' son OPCIONALES — no interrumpen la carga si faltan.
+    """
     faltantes = []
     mapeo = {}
     for col_interna, candidatos in required_cols_dict.items():
+        opcional  = col_interna.startswith("?")
+        col_key   = col_interna.lstrip("?")
         encontrada = find_col(df, candidatos)
         if encontrada:
-            mapeo[encontrada] = col_interna
-        else:
-            faltantes.append(f"{col_interna} (ej. {candidatos[0]})")
-    
+            mapeo[encontrada] = col_key
+        elif not opcional:
+            faltantes.append(f"{col_key} (ej. {candidatos[0]})")
+
     if faltantes:
         _missing_msg = ", ".join(faltantes)
         log_error("validate_columns", Exception(f"Columnas faltantes en {retailer}: {_missing_msg}"))
         return None
 
-    for col_interna, col_encontrada in mapeo.items():
+    for col_encontrada, col_interna in mapeo.items():
         if col_encontrada in df.columns and df[col_encontrada].isna().all():
             log_error("validate_columns", Exception(f"Columna vacía '{col_encontrada}' en {retailer}"))
 
     df = df.rename(columns=mapeo)
-    return df[list(required_cols_dict.keys())]
-
-
-def ensure_required_columns(df, required_cols):
-
-    missing = [c for c in required_cols if c not in df.columns]
-
-    if missing:
-        raise ValueError(f'Columnas faltantes: {missing}')
-
-    return df
-
+    keep = [col_interna.lstrip("?") for col_interna in required_cols_dict.keys()
+            if col_interna.lstrip("?") in df.columns]
+    return df[keep]
 
 def clean_text(series):
     """Limpieza vectorizada: fillna + strip + upper + espacios normalizados."""
@@ -634,50 +607,48 @@ def load_sor(path):
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
 
-        # BLINDAJE UNIVERSAL
-        df.columns = [normalize_column_name(c) for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
-
         # FIX SORIANA2: normalizar columnas datetime a texto limpio
         df.columns = [str(c).strip() for c in df.columns]
             
         SORIANA_COLS = {
-            "RESURTIMIENTO": ["Resurtible"],
-            "CODIGO": ["Código de Barras Ragasa", "Codigo de Barras", "Codigo"],
-            "DESCRIPCION": ["Descripción", "Descripcion"],
-            "NO_TIENDA": ["No tienda", "No. Tienda", "# Tienda"],
-            "TIENDA": ["Nombre Tienda", "Tienda"],
-            "CIUDAD": ["Ciudad"],
-            "ESTADO": ["Estado"],
-            "FORMATO": ["Formato"],
-            "PEDIDOS": ["# PEDIDOS", "PEDIDOS"],
-            "FECHA_ENTREGA": ["PROXIMA ENTREGA", "FECHA ENTREGA"],
-            "CANTIDAD_PZS": ["CANTIDAD PROX A LLEGAR", "CANTIDAD PZS"],
-            "INV_CAJAS": ["INV CAJAS", "INVENTARIO CAJAS", "INVENTARIO"],
-            "PROM_SEM_CAJAS": ["PROM SEM CAJAS", "PROM SEMANAL CAJAS"],
-            "DIAS_INV": ["DIAS INV TENDENCIA", "DIAS INV"],
-            "COORDINADOR": ["COORDINADOR", "COORDINADOR VTAS"]
+            "RESURTIMIENTO":  ["Resurtible", "Resurtible?", "RESURTIBLE"],
+            "CODIGO":         ["Código de Barras Ragasa", "Codigo de Barras Ragasa",
+                               "Codigo de Barras", "Codigo", "UPC", "EAN", "~BARRAS"],
+            "DESCRIPCION":    ["Descripción", "Descripcion", "DESCRIPCION",
+                               "Desc", "Artículo", "Articulo"],
+            "NO_TIENDA":      ["No tienda", "No. Tienda", "# Tienda", "NUM TIENDA",
+                               "NOTIENDA", "~^NO.*TIENDA"],
+            "TIENDA":         ["Nombre Tienda", "Tienda", "TIENDA", "NOMBRE TIENDA"],
+            "CIUDAD":         ["Ciudad", "CIUDAD"],
+            "ESTADO":         ["Estado", "ESTADO"],
+            "FORMATO":        ["Formato", "FORMATO"],
+            "PEDIDOS":        ["# PEDIDOS", "PEDIDOS", "NUM PEDIDOS"],
+            "FECHA_ENTREGA":  ["PROXIMA ENTREGA", "FECHA ENTREGA", "PROX ENTREGA",
+                               "~PROX.*ENTREGA", "~ENTREGA"],
+            "CANTIDAD_PZS":   ["CANTIDAD PROX A LLEGAR", "CANTIDAD PZS",
+                               "CANT PZS", "~CANTIDAD.*LLEGAR"],
+            "INV_CAJAS":      ["INV CAJAS", "INVENTARIO CAJAS", "INVENTARIO",
+                               "~INV.*CAJAS"],
+            "PROM_SEM_CAJAS": ["PROM SEM CAJAS", "PROM SEMANAL CAJAS",
+                               "~PROM.*SEM.*CAJAS"],
+            "DIAS_INV":       ["DIAS INV TENDENCIA", "DIAS INV", "DIT",
+                               "~DIAS.*INV"],
+            "COORDINADOR":    ["COORDINADOR", "COORDINADOR VTAS"],
+            "?PROMOTOR":      ["PROMOTOR", "Promotor"],
+            "?EJECUTIVO":     ["EJECUTIVO", "Ejecutivo"],
+            "?TUBERIA":       ["TUBERIA CJS", "TUBERIA", "~TUBERIA"],
         }
         
         pedidos_col = find_col(df, ["# PEDIDOS", "PEDIDOS"])
-
         if pedidos_col:
-
             pedidos_idx = list(df.columns).index(pedidos_col)
-
-            all_5_cols = df.columns[pedidos_idx-5 : pedidos_idx]
-
-            sem_completas = all_5_cols[:-1]
-
+            all_5_cols = df.columns[pedidos_idx-5 : pedidos_idx]   
+            sem_completas = all_5_cols[:-1]                         
             for c in all_5_cols:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-
-            df["SO_4SEM"] = df[sem_completas[-4:]].sum(axis=1)
-
-            df["SO_$"] = df[sem_completas[-1]]
-
+            df["SO_4SEM"] = df[sem_completas[-4:]].sum(axis=1)      
+            df["SO_$"]    = df[sem_completas[-1]]                   
         else:
-
             df["SO_4SEM"] = 0
             df["SO_$"] = 0
             
@@ -727,27 +698,29 @@ def load_wal(path):
         except Exception:
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
-
-        # BLINDAJE UNIVERSAL
-        df.columns = [normalize_column_name(c) for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
             
         WALMART_COLS = {
-            "CODIGO": ["UPC"],
-            "DESCRIPCION": ["Item Desc"],
-            "CATEGORIA": ["Category Name"],
-            "ESTADO": ["EDO"],
-            "TIENDA": ["Store Name"],
-            "FORMATO": ["Business Format"],
-            "MARCA": ["Marca"],
-            "DIAS_INV": ["DDI OH"],
-            "EXISTENCIA": ["OH"],
-            "VTA_S1": ["SO - 4 P"],
-            "VTA_S2": ["SO - 3 P"],
-            "VTA_S3": ["SO - 2 P"],
-            "VTA_S4": ["SO - 1 P"],
-            "SO_$": ["SO - 1 $"],           
-            "SO_CORRIENDO": ["Sell out Valor corriendo"]  
+            "CODIGO":       ["UPC", "Código de Barras", "Codigo", "~^UPC"],
+            "DESCRIPCION":  ["Item Desc", "Descripcion", "DESCRIPCION",
+                             "~Item.*Desc"],
+            "CATEGORIA":    ["Category Name", "Categoria", "CATEGORIA",
+                             "~Categor"],
+            "ESTADO":       ["EDO", "Estado", "ESTADO"],
+            "TIENDA":       ["Store Name", "Tienda", "TIENDA",
+                             "~Store.*Name"],
+            "FORMATO":      ["Business Format", "Formato", "FORMATO",
+                             "~Business.*Format"],
+            "MARCA":        ["Marca", "MARCA", "Brand", "~[Mm]arca"],
+            "DIAS_INV":     ["DDI OH", "DIAS INV", "DDI", "~DDI"],
+            "EXISTENCIA":   ["OH", "Existencia", "EXISTENCIA", "Inventario",
+                             "~^OH$"],
+            "VTA_S1":       ["SO - 4 P", "SO-4P", "~SO.*4.*P$"],
+            "VTA_S2":       ["SO - 3 P", "SO-3P", "~SO.*3.*P$"],
+            "VTA_S3":       ["SO - 2 P", "SO-2P", "~SO.*2.*P$"],
+            "VTA_S4":       ["SO - 1 P", "SO-1P", "~SO.*1.*P$"],
+            "SO_$":         ["SO - 1 $", "SO-1$", "~SO.*1.*[$]"],
+            "SO_CORRIENDO": ["Sell out Valor corriendo", "SO Corriendo",
+                             "~Sell.*[Vv]alor.*corriendo"],
         }
         
         if len(df.columns) < 10:
@@ -791,27 +764,43 @@ def load_che(path):
         # causado por calamine + dtype_backend
         source.seek(0)
         df = pd.read_excel(source, engine='openpyxl')
-
-        # BLINDAJE UNIVERSAL
-        df.columns = [normalize_column_name(c) for c in df.columns]
-        df = df.loc[:, ~df.columns.duplicated()]
         
         CHEDRAUI_COLS = {
-            "CODIGO": ["CODIGO BARRAS", "Codigo Barras", "Codigo", "UPC"],
-            "ESTADO": ["ESTADO", "Estado"],
-            "COORDINADOR": ["COORDINADOR VTAS", "COORDINADOR"],
-            "EJECUTIVO": ["EJECUTIVO", "Ejecutivo"],
-            "PROMOTOR": ["PROMOTOR", "Promotor"],
-            "COL_FILTRO": ["ESTATUS", "Estatus"],
-            "CATEGORIA": ["CATEGORÍA", "CATEGORIA"],
-            "NO_TIENDA": ["# TDA", "NO TIENDA", "NO_TIENDA"],
-            "TIENDA": ["TIENDA", "Tienda"],
-            "ARTICULO": ["DESCRIPCION", "DESCRIPCIÓN", "ARTICULO", "Sku"],
-            "INV_ULT_SEM": ["INVENTARIO"],
-            "TRANSITO_CEDIS": ["Transitos de cedis a tiendas", "TRANSITOS DE CEDIS A TIENDAS", "TRANSITO CEDIS"],
-            "VTA_PROM_DIARIA": ["VENTA PROM DIARIO", "VTA PROM"],
-            "DIAS_INV": ["DIAS DE INVENTARIO", "DIAS INV"],
-            "SELL_OUT": ["VENTA $", "SELL OUT", "VENTA"]
+            "CODIGO":          ["CODIGO BARRAS", "Codigo Barras", "Codigo", "UPC",
+                                "CÓDIGO DE BARRAS", "~CODIGO.*BARRAS", "~BARRAS"],
+            "ESTADO":          ["ESTADO", "Estado"],
+            "COORDINADOR":     ["COORDINADOR VTAS", "Coordinador Vtas", "COORDINADOR",
+                                "~COORDINADOR"],
+            "EJECUTIVO":       ["EJECUTIVO", "Ejecutivo"],
+            "PROMOTOR":        ["PROMOTOR", "Promotor"],
+            "COL_FILTRO":      ["ESTATUS", "Estatus", "STATUS", "~ESTATUS"],
+            "CATEGORIA":       ["CATEGORÍA", "CATEGORIA", "Categoría", "Category",
+                                "~CATEG"],
+            "NO_TIENDA":       ["# TDA", "NO TIENDA", "NO_TIENDA", "NUM TIENDA",
+                                "NOTIENDA", "# TIENDA", "~^#.*TDA", "~^NO.*TIENDA"],
+            "TIENDA":          ["TIENDA", "Tienda"],
+            "ARTICULO":        ["DESCRIPCION", "DESCRIPCIÓN", "Descripcion",
+                                "ARTICULO", "Sku", "SKU", "~DESCRIP"],
+            # ★ CORRECCIÓN CRÍTICA: antes solo buscaba "INVENTARIO" y fallaba
+            #   con "Inventario 24 Abril 2026". Ahora cubre fechas dinámicas.
+            "INV_ULT_SEM":     ["Inventario 24 Abril 2026", "Inventario 17 Abril 2026",
+                                "Inventario 24 Abr 2026",  "Inventario 17 Abr 2026",
+                                "Inventario 10 Abr 2026",  "Inventario 3 Abr 2026",
+                                "INVENTARIO", "Inventario", "~^Inventario[\\s]+[\\d]+"],
+            "TRANSITO_CEDIS":  ["Transitos de cedis a tiendas",
+                                "TRANSITOS DE CEDIS A TIENDAS", "TRANSITO CEDIS",
+                                "Tránsitos de cedis", "~TRANSITO.*CEDIS"],
+            "VTA_PROM_DIARIA": ["VENTA PROM DIARIO", "VTA PROM", "VENTA PROMEDIO",
+                                "~VENTA.*PROM"],
+            "DIAS_INV":        ["DIAS DE INVENTARIO", "DIAS INV", "DÍAS DE INVENTARIO",
+                                "~DIAS.*INV"],
+            "SELL_OUT":        ["VENTA $", "SELL OUT", "VENTA", "Venta $",
+                                "~VENTA.*[$]"],
+            # Opcionales — presentes en el Excel actual pero no usadas antes
+            "?VTA_ULT_MES":    ["Venta Unidades Abril 2026", "Venta Unidades Mayo 2026",
+                                "Venta Unidades Marzo 2026", "~Venta Unidades.*202"],
+            "?VTA_MES_ANT":    ["Venta Neta en Unidades Ant. Mar 2025",
+                                "Venta Neta Anterior", "~Venta Neta.*Ant"],
         }
         
         if len(df.columns) < 10:
@@ -873,7 +862,7 @@ def load_fre(path):
         df = df.dropna(how="all").reset_index(drop=True)
 
         FRESKO_COLS = {
-            "ANIO":        ["Año", "Anio", "AÑO"],
+            "ANIO":        ["Año", "Anio", "AÑO", "ANIO"],
             "MES":         ["Mes", "MES"],
             "ESTADO":      ["ESTADO", "Estado"],
             "COORDINADOR": ["Coordinador Vtas", "Coordinador", "COORDINADOR"],
@@ -881,18 +870,29 @@ def load_fre(path):
             "PROMOTOR":    ["Promotor", "PROMOTOR"],
             "FORMATO":     ["FORMATO", "Formato"],
             "ESTATUS":     ["ESTATUS", "Estatus"],
-            "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA"],
+            "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA", "NUM TIENDA",
+                            "~^#.*TDA"],
             "TIENDA":      ["Tienda", "TIENDA"],
-            "CODIGO":      ["Sku", "SKU", "UPC", "Codigo", "CODIGO"],
-            "DESCRIPCION": ["Descripcion", "DESCRIPCION", "Desc"],
-            "VTAMZO":      ["Unidades venta\nMarzo 2026", "Unidades venta Marzo 2026", "VTAMZO"],
-            "VTAABR":      ["Unidades venta\nAbril´26", "Unidades venta Abril´26", "Unidades venta Abril 26", "VTAABR"],
-            "IMPORTEABR":  ["IMPORTE", "Importe", "Importe venta\nAbril´26", "Importe venta Abril´26",
-                             "Importe Abril´26", "Importe Abril 26", "IMPORTE ABR", "IMPORTEABR"],
-            "EXISTENCIA":  ["Inventario 24 Abr 2026", "Inventario 17 Abr 2026", "Inventario", "EXISTENCIA"],
-            "TRANSITO":    ["Unidades tránsito", "Unidades transito", "TRANSITO"],
-            "VTAPROM":     ["VTA PROM", "Vta Prom", "VTAPROM"],
-            "DIASINV":     ["DI INV", "DIAS INV", "DIASINV"],
+            "CODIGO":      ["Sku", "SKU", "UPC", "Codigo", "CODIGO",
+                            "~^SKU", "~^UPC"],
+            "DESCRIPCION": ["Descripcion", "DESCRIPCION", "Descripción", "Desc"],
+            # Columnas con salto de línea — blindadas con múltiples alias y regex
+            "VTAMZO":      ["Unidades venta\nMarzo 2026", "Unidades venta Marzo 2026",
+                            "VTAMZO", "~Unidades.*[Mm]arzo"],
+            "VTAABR":      ["Unidades venta\nAbril´26", "Unidades venta Abril´26",
+                            "Unidades venta Abril 26", "VTAABR",
+                            "~Unidades.*[Aa]bril"],
+            "IMPORTEABR":  ["IMPORTE", "Importe", "Importe venta\nAbril´26",
+                            "Importe venta Abril´26", "Importe Abril´26",
+                            "Importe Abril 26", "IMPORTE ABR", "IMPORTEABR",
+                            "~[Ii]mporte"],
+            "EXISTENCIA":  ["Inventario 24 Abr 2026", "Inventario 17 Abr 2026",
+                            "Inventario 24 Abril 2026", "Inventario 10 Abr 2026",
+                            "Inventario", "EXISTENCIA", "~^Inventario[\\s]+[\\d]+"],
+            "TRANSITO":    ["Unidades tránsito", "Unidades transito",
+                            "TRANSITO", "~[Tt]r.nsito"],
+            "VTAPROM":     ["VTA PROM", "Vta Prom", "VTAPROM", "~VTA.*PROM"],
+            "DIASINV":     ["DI INV", "DIAS INV", "DIASINV", "~D[IA]+S.*INV"],
         }
 
         # validate_columns mapea IMPORTE → IMPORTEABR directamente
