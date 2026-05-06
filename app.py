@@ -1,30 +1,42 @@
 import streamlit as st
 import streamlit.components.v1 as components
-import subprocess, sys
-
-# ── AUTO-INSTALL dependencias faltantes
-def _ensure_pkg(pkg):
-    try:
-        __import__(pkg)
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
-
-_ensure_pkg("openpyxl")
-_ensure_pkg("python_calamine")
 import pandas as pd
 import numpy as np
 import time
+import re
+import unicodedata
 import requests
 import plotly.express as px
 import urllib.parse
 import os
 import re
+import unicodedata
 from io import BytesIO, StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import logging
 
 logging.basicConfig(level=logging.INFO)
+
+# ─────────────────────────────────────────────────────────────
+# NORMALIZADOR UNIVERSAL DE ENCABEZADOS
+# ─────────────────────────────────────────────────────────────
+def normalize_header(value):
+
+    if pd.isna(value):
+        return ""
+
+    value = str(value)
+
+    value = unicodedata.normalize("NFKD", value)
+    value = "".join(c for c in value if not unicodedata.combining(c))
+
+    value = value.upper().strip()
+
+    value = re.sub(r"\s+", " ", value)
+
+    return value
+
 
 def log_error(context: str, error: Exception):
     logging.error(f"{context} → {str(error)}")
@@ -204,8 +216,7 @@ def apply_filters(df, filter_cols_or_dict, selections=None):
                 df[col]
                 .fillna("")
                 .astype(str)
-                .str.strip()
-                .str.upper()
+                .apply(normalize_header)
             )
 
             sel_set = set(clean_sel)
@@ -509,35 +520,46 @@ def set_retailer(retailer_name):
 # --- 4. MOTOR INTELIGENTE DE LECTURA DE COLUMNAS ---
 def find_col(df, candidates):
     """
-    Busca una columna en df.columns entre los candidatos.
-    Soporta:
-      - "NombreExacto"    -> búsqueda exacta (case-insensitive, strip)
-      - "~patron_regex"   -> búsqueda por regex en los headers (prefijo ~)
-    Fallback: partial match para compatibilidad.
+    Busca columnas aunque:
+    - cambien mayúsculas
+    - tengan espacios
+    - tengan acentos
+    - Excel convierta fechas
     """
+
     import re as _re
-    cols_up = {str(c).strip().upper(): c for c in df.columns}
+
+    normalized_cols = {
+        normalize_header(c): c
+        for c in df.columns
+    }
 
     for name in candidates:
+
         sname = str(name)
+
+        # REGEX
         if sname.startswith("~"):
-            pattern = sname[1:]
-            for key, col in cols_up.items():
-                if _re.search(pattern, key, _re.IGNORECASE):
-                    return col
+
+            pattern = normalize_header(sname[1:])
+
+            for norm_col, real_col in normalized_cols.items():
+                if _re.search(pattern, norm_col, _re.IGNORECASE):
+                    return real_col
+
         else:
-            if sname.upper() in cols_up:
-                return cols_up[sname.upper()]
 
-    # Fallback partial match (sin regex)
-    for name in candidates:
-        sname = str(name)
-        if sname.startswith("~"):
-            continue
-        nu = sname.upper()
-        for key, col in cols_up.items():
-            if nu in key:
-                return col
+            target = normalize_header(sname)
+
+            # MATCH EXACTO
+            if target in normalized_cols:
+                return normalized_cols[target]
+
+            # MATCH PARCIAL
+            for norm_col, real_col in normalized_cols.items():
+                if target in norm_col:
+                    return real_col
+
     return None
 def validate_columns(df, retailer, required_cols_dict):
     """
@@ -607,8 +629,13 @@ def load_sor(path):
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
 
-        # FIX SORIANA2: normalizar columnas datetime a texto limpio
-        df.columns = [str(c).strip() for c in df.columns]
+        # BLINDAJE ESTABLE
+        df.columns = [normalize_header(c) for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
+
+        # BLINDAJE ESTABLE
+        df.columns = [normalize_header(c) for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
             
         SORIANA_COLS = {
             "RESURTIMIENTO":  ["Resurtible", "Resurtible?", "RESURTIBLE"],
@@ -698,6 +725,10 @@ def load_wal(path):
         except Exception:
             source.seek(0)
             df = pd.read_excel(source, engine='openpyxl')
+
+        # BLINDAJE ESTABLE
+        df.columns = [normalize_header(c) for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
             
         WALMART_COLS = {
             "CODIGO":       ["UPC", "Código de Barras", "Codigo", "~^UPC"],
@@ -764,6 +795,10 @@ def load_che(path):
         # causado por calamine + dtype_backend
         source.seek(0)
         df = pd.read_excel(source, engine='openpyxl')
+
+        # BLINDAJE ESTABLE
+        df.columns = [normalize_header(c) for c in df.columns]
+        df = df.loc[:, ~df.columns.duplicated()]
         
         CHEDRAUI_COLS = {
             "CODIGO":          ["CODIGO BARRAS", "Codigo Barras", "Codigo", "UPC",
