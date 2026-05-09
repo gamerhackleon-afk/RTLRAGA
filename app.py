@@ -881,6 +881,69 @@ def load_che(path):
         return None
 
 
+def _fre_detect_dynamic_cols(df):
+    """
+    Detecta automáticamente las columnas de FRESKO que cambian cada mes
+    (ventas, importe, inventario) usando semántica + posición relativa.
+
+    Estrategia:
+      - Las columnas de texto fijo (ESTADO, TIENDA, etc.) se mapean por alias normales.
+      - Las columnas "móviles" (Unidades venta MesX, Inventario DD MMM AAAA, IMPORTE)
+        se detectan con regex independientes del mes/año/formato de fecha.
+      - Cuando hay DOS columnas "Unidades venta …", la primera = VTAMZO (mes anterior),
+        la segunda = VTAABR (mes en curso / al corte).
+      - Si solo hay UNA columna "Unidades venta …", se asigna a VTAABR.
+
+    Retorna un dict  col_interna → nombre_real_en_df  (o None si no encontrada).
+    """
+    import re as _re
+
+    norm = {normalize_header(c): c for c in df.columns}
+
+    def _find(pattern):
+        """Devuelve la primera columna real que coincide con el regex (sobre header normalizado)."""
+        for nk, real in norm.items():
+            if _re.search(pattern, nk, _re.IGNORECASE):
+                return real
+        return None
+
+    def _find_all(pattern):
+        """Devuelve TODAS las columnas reales que coinciden, en orden de aparición."""
+        matches = []
+        for col in df.columns:                       # orden original
+            if _re.search(pattern, normalize_header(col), _re.IGNORECASE):
+                matches.append(col)
+        return matches
+
+    result = {}
+
+    # ── columnas de unidades vendidas ──────────────────────────────────────────
+    # Patrón: "Unidades" + ("venta" o "vendidas") — ignora mes, año, saltos de línea
+    venta_cols = _find_all(r"unidades[\s\n]+vent")
+    if len(venta_cols) >= 2:
+        result["VTAMZO"] = venta_cols[0]   # mes anterior (primer bloque)
+        result["VTAABR"] = venta_cols[1]   # mes en curso (segundo bloque)
+    elif len(venta_cols) == 1:
+        result["VTAABR"] = venta_cols[0]   # solo hay un bloque → mes en curso
+
+    # ── importe ────────────────────────────────────────────────────────────────
+    # Puede llamarse IMPORTE, Importe, "Importe venta Abr´26", "Importe Mayo 26", etc.
+    result["IMPORTEABR"] = _find(r"\bimporte\b")
+
+    # ── inventario / existencia ────────────────────────────────────────────────
+    # Puede ser "Inventario 08 mayo 2026", "Inventario 24 Abr 2026", "Existencia", etc.
+    result["EXISTENCIA"] = _find(r"inventario|existencia")
+
+    # ── tránsito ───────────────────────────────────────────────────────────────
+    result["TRANSITO"] = _find(r"tr[aá]nsito|transito")
+
+    # ── promedios y días ───────────────────────────────────────────────────────
+    result["VTAPROM"]  = _find(r"vta[\s_]*prom|prom[\s_]*vta|promedio[\s_]*vent")
+    result["DIASINV"]  = _find(r"d[ií][aá]s?[\s_]*inv|di[\s_]*inv")
+
+    return result   # solo incluye claves donde se encontró algo
+
+
 @st.cache_data(**CACHE_CONFIG)
 def load_fre(path):
     try:
@@ -893,68 +956,99 @@ def load_fre(path):
             source.seek(0)
             df = pd.read_excel(source, engine="openpyxl")
 
-        # Eliminar filas completamente vacías (ej. fila de totales al final)
+        # Eliminar filas completamente vacías
         df = df.dropna(how="all").reset_index(drop=True)
 
-        FRESKO_COLS = {
-            "ANIO":        ["Año", "Anio", "AÑO", "ANIO"],
-            "MES":         ["Mes", "MES"],
-            "ESTADO":      ["ESTADO", "Estado"],
-            "COORDINADOR": ["Coordinador Vtas", "Coordinador", "COORDINADOR"],
-            "EJECUTIVO":   ["Ejecutivo de ventas", "Ejecutivo", "EJECUTIVO"],
-            "PROMOTOR":    ["Promotor", "PROMOTOR"],
-            "FORMATO":     ["FORMATO", "Formato"],
-            "ESTATUS":     ["ESTATUS", "Estatus"],
-            "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA", "NUM TIENDA",
-                            "~^#.*TDA"],
-            "TIENDA":      ["Tienda", "TIENDA"],
-            "CODIGO":      ["Sku", "SKU", "UPC", "Codigo", "CODIGO",
-                            "~^SKU", "~^UPC"],
-            "DESCRIPCION": ["Descripcion", "DESCRIPCION", "Descripción", "Desc"],
-            # Columnas con salto de línea — blindadas con múltiples alias y regex
-            "VTAMZO":      ["Unidades venta\nAbril 2026", "Unidades venta Abril 2026",
-                            "Unidades venta\nMarzo 2026", "Unidades venta Marzo 2026",
-                            "VTAMZO", "~Unidades.*[Aa]bril", "~Unidades.*[Mm]arzo"],
-            "VTAABR":      ["Unidades venta\nMay´26", "Unidades venta May´26",
-                            "Unidades venta\nMayo 2026", "Unidades venta Mayo 2026",
-                            "Unidades venta\nAbril´26", "Unidades venta Abril´26",
-                            "Unidades venta Abril 26", "VTAABR",
-                            "~Unidades.*[Mm]ay", "~Unidades.*[Aa]bril"],
-            "IMPORTEABR":  ["IMPORTE", "Importe", "Importe venta\nMay´26",
-                            "Importe venta May´26", "Importe venta\nAbril´26",
-                            "Importe venta Abril´26", "Importe Abril´26",
-                            "Importe Abril 26", "IMPORTE ABR", "IMPORTEABR",
-                            "~[Ii]mporte"],
-            "EXISTENCIA":  ["Inventario 08 mayo 2026", "Inventario 08 Mayo 2026",
-                            "Inventario 24 Abr 2026", "Inventario 17 Abr 2026",
-                            "Inventario 24 Abril 2026", "Inventario 10 Abr 2026",
-                            "Inventario", "EXISTENCIA", "~^Inventario[\\s]+[\\d]+",
-                            "~^Inventario.*[Mm]ay", "~^Inventario.*[Aa]br"],
-            "TRANSITO":    ["Unidades tránsito", "Unidades transito",
-                            "TRANSITO", "~[Tt]r.nsito"],
-            "VTAPROM":     ["VTA PROM", "Vta Prom", "VTAPROM", "~VTA.*PROM"],
-            "DIASINV":     ["DI INV", "DIAS INV", "DIASINV", "~D[IA]+S.*INV"],
-        }
-
-        # validate_columns mapea IMPORTE → IMPORTEABR directamente
         if len(df.columns) < 10:
             return None
-        df = validate_columns(df, "FRESKO", FRESKO_COLS)
+
+        # ── 1. Columnas FIJAS (no cambian entre meses) ─────────────────────────
+        FRESKO_COLS_FIJOS = {
+            "ANIO":        ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
+            "MES":         ["Mes", "MES", "~^MES$"],
+            "ESTADO":      ["ESTADO", "Estado", "~^ESTADO$"],
+            "COORDINADOR": ["Coordinador Vtas", "Coordinador", "COORDINADOR",
+                            "~COORDINAD"],
+            "EJECUTIVO":   ["Ejecutivo de ventas", "Ejecutivo", "EJECUTIVO",
+                            "~EJECUTIV"],
+            "PROMOTOR":    ["Promotor", "PROMOTOR", "~^PROMOTOR$"],
+            "FORMATO":     ["FORMATO", "Formato", "~^FORMATO$"],
+            "ESTATUS":     ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
+            "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA", "NUM TIENDA",
+                            "~^#.*TDA", "~NUM.*TIENDA", "~NO.*TIENDA"],
+            "TIENDA":      ["Tienda", "TIENDA", "~^TIENDA$", "~NOMBRE.*TIENDA"],
+            "CODIGO":      ["Sku", "SKU", "UPC", "Codigo", "CODIGO",
+                            "~^SKU", "~^UPC", "~^CODIGO", "~^EAN"],
+            "DESCRIPCION": ["Descripcion", "DESCRIPCION", "Descripción",
+                            "Desc", "ARTICULO", "~^DESC", "~^ARTICULO"],
+        }
+
+        df = validate_columns(df, "FRESKO", FRESKO_COLS_FIJOS)
         if df is None:
             return None
 
-        # FIX 3: Limpiar SKU ANTES de mapear categorías (evita "7501039121610 " ≠ "7501039121610")
-        if "CODIGO" in df.columns:
-            df["CODIGO"] = df["CODIGO"].fillna("").astype(str).str.replace(r"\.0$","",regex=True).str.strip()
+        # ── 2. Columnas DINÁMICAS — detección semántica ────────────────────────
+        # Nota: trabajamos sobre el df original para buscarlas, luego las unimos.
+        source2 = download_file(path)
+        try:
+            df_raw = pd.read_excel(source2, engine="calamine")
+        except Exception:
+            source2.seek(0)
+            df_raw = pd.read_excel(source2, engine="openpyxl")
+        df_raw = df_raw.dropna(how="all").reset_index(drop=True)
 
+        dynamic_map = _fre_detect_dynamic_cols(df_raw)
+
+        col_interno_to_alias = {
+            "VTAMZO":     ["VTAMZO",     "~Unidades.*[Mm]arzo",   "~Unidades.*[Aa]bril"],
+            "VTAABR":     ["VTAABR",     "~Unidades.*vent"],
+            "IMPORTEABR": ["IMPORTEABR", "IMPORTE",    "~[Ii]mporte"],
+            "EXISTENCIA": ["EXISTENCIA", "Inventario", "~[Ii]nventar", "~[Ee]xistencia"],
+            "TRANSITO":   ["TRANSITO",   "Unidades tránsito", "~[Tt]r.nsito"],
+            "VTAPROM":    ["VTAPROM",    "VTA PROM",  "~VTA.*PROM"],
+            "DIASINV":    ["DIASINV",    "DI INV",    "~D[IA]+S.*INV"],
+        }
+
+        for col_int, real_col in dynamic_map.items():
+            if real_col is not None and real_col in df_raw.columns:
+                df[col_int] = df_raw[real_col].values
+
+        # Si alguna dinámica no se detectó, intentar con aliases legacy como último recurso
+        for col_int, aliases in col_interno_to_alias.items():
+            if col_int not in df.columns:
+                fallback = find_col(df_raw, aliases)
+                if fallback is not None:
+                    df[col_int] = df_raw[fallback].values
+
+        # ── 3. Limpieza numérica ───────────────────────────────────────────────
         for c in ["VTAMZO","VTAABR","IMPORTEABR","EXISTENCIA","TRANSITO","VTAPROM","DIASINV"]:
             if c in df.columns:
                 df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+            else:
+                df[c] = 0   # garantiza que la columna siempre existe
+
+        # ── 4. Limpieza de texto ───────────────────────────────────────────────
+        if "CODIGO" in df.columns:
+            # Convertir a numérico primero para manejar notación científica (ej. 8.41018e+12)
+            # luego a entero y finalmente a string limpio sin decimales.
+            def _clean_codigo(val):
+                s = str(val).strip()
+                if s in ("", "nan", "None", "NaN"):
+                    return ""
+                try:
+                    # Maneja notación científica y decimales (.0, .00, etc.)
+                    return str(int(float(s)))
+                except (ValueError, OverflowError):
+                    # Si no es numérico puro, limpiar solo los .0 finales
+                    import re as _re
+                    return _re.sub(r"\.0+$", "", s).strip()
+
+            df["CODIGO"] = df["CODIGO"].apply(_clean_codigo)
 
         df = _str_cols(df, ["ESTADO","COORDINADOR","EJECUTIVO","PROMOTOR","FORMATO","ESTATUS","TIENDA","DESCRIPCION","CODIGO"])
-        df["CATEGORIA"] = df["CODIGO"].astype(str).map(CATEGORIA_MAP)  # NaN = SKU no listado, NO categorizar como "OTROS"
-        if "TIENDA"  in df.columns: df["TIENDA"] = clean_text(df["TIENDA"])
-        if "ESTADO"  in df.columns: df["ESTADO"] = clean_text(df["ESTADO"])
+        df["CATEGORIA"] = df["CODIGO"].astype(str).map(CATEGORIA_MAP)
+        if "TIENDA"  in df.columns: df["TIENDA"]  = clean_text(df["TIENDA"])
+        if "ESTADO"  in df.columns: df["ESTADO"]  = clean_text(df["ESTADO"])
         if "FORMATO" in df.columns: df["FORMATO"] = clean_text(df["FORMATO"])
         df["DESC_NORM"] = df["DESCRIPCION"].fillna("").str.upper().str.replace("\u00A0"," ",regex=False).str.replace("  "," ",regex=False)
 
@@ -2633,6 +2727,8 @@ def view_fresko(df_f):
         _prev     = st.session_state.get(_prev_key, [])
         if set(_curr) != set(_prev):
             st.session_state[_prev_key] = list(_curr)
+            # Limpiar ejecutivo para evitar que un valor residual bloquee los datos
+            st.session_state["f_fil_ej"] = []
             if _curr and col_filter in df_f.columns:
                 _sub = df_f[df_f[col_filter].isin(set(_curr))]
                 if not _sub.empty:
@@ -2642,23 +2738,24 @@ def view_fresko(df_f):
                                 _sub[_acol].dropna().unique().tolist()
                             )
 
-    # Auto-fill desde # Tienda (NOTIENDA) → rellena Estado, Tienda, Formato, Coordinador, Ejecutivo, Promotor
+    # Auto-fill desde # Tienda (NOTIENDA) → rellena Estado, Tienda, Formato, Coordinador, Promotor
+    # NOTA: EJECUTIVO se excluye del auto-fill porque puede variar por registro dentro
+    # de una misma tienda; si se fuerza, el filtro posterior elimina datos válidos.
     _auto_fill_from("NOTIENDA", "f_fil_tda", [
         ("ESTADO",      "f_fil_ed"),
         ("TIENDA",      "f_fil_ti"),
         ("FORMATO",     "f_fil_fmt"),
         ("COORDINADOR", "f_fil_crd"),
-        ("EJECUTIVO",   "f_fil_ej"),
         ("PROMOTOR",    "f_fil_pr"),
     ])
 
-    # Auto-fill desde Tienda nombre → rellena #Tienda, Estado, Formato, Coordinador, Ejecutivo, Promotor
+    # Auto-fill desde Tienda nombre → rellena #Tienda, Estado, Formato, Coordinador, Promotor
+    # NOTA: EJECUTIVO se excluye del auto-fill — ver nota anterior.
     _auto_fill_from("TIENDA", "f_fil_ti", [
         ("NOTIENDA",    "f_fil_tda"),
         ("ESTADO",      "f_fil_ed"),
         ("FORMATO",     "f_fil_fmt"),
         ("COORDINADOR", "f_fil_crd"),
-        ("EJECUTIVO",   "f_fil_ej"),
         ("PROMOTOR",    "f_fil_pr"),
     ])
 
@@ -2731,6 +2828,10 @@ def view_fresko(df_f):
         if st.button("🗑️ Borrar filtros", key="btn_cls_fre", type="secondary"):
             for _k in _FKEYS:
                 st.session_state[_k] = []
+            # Limpiar claves de seguimiento para que el auto-fill se dispare en la siguiente selección
+            for _pk in ["_prev_f_fil_tda", "_prev_f_fil_ti"]:
+                if _pk in st.session_state:
+                    del st.session_state[_pk]
             st.rerun()
 
     # ── 6. CALCULAR OPCIONES POR CASCADEO BIDIRECCIONAL ───────────────────────
