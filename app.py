@@ -200,9 +200,9 @@ def apply_filters(df, filter_cols_or_dict, selections=None):
         items = zip(filter_cols_or_dict, selections or [])
     for col, sel in items:
         clean_sel = [
-            str(s).strip().upper()
+            normalize_header(s)
             for s in (sel or [])
-            if str(s).strip().upper() not in ("", "NAN", "NONE", "NAT")
+            if normalize_header(s) not in ("", "NAN", "NONE", "NAT")
         ]
         if clean_sel and col in df.columns:
             # FIX DEFINITIVO:
