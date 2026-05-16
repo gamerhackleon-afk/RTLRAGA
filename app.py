@@ -964,8 +964,8 @@ def load_fre(path):
 
         # ── 1. Columnas FIJAS (no cambian entre meses) ─────────────────────────
         FRESKO_COLS_FIJOS = {
-            "ANIO":        ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
-            "MES":         ["Mes", "MES", "~^MES$"],
+            "?ANIO":       ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
+            "?MES":        ["Mes", "MES", "~^MES$"],
             "ESTADO":      ["ESTADO", "Estado", "~^ESTADO$"],
             "COORDINADOR": ["Coordinador Vtas", "Coordinador", "COORDINADOR",
                             "~COORDINAD"],
@@ -973,7 +973,7 @@ def load_fre(path):
                             "~EJECUTIV"],
             "PROMOTOR":    ["Promotor", "PROMOTOR", "~^PROMOTOR$"],
             "FORMATO":     ["FORMATO", "Formato", "~^FORMATO$"],
-            "ESTATUS":     ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
+            "?ESTATUS":    ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
             "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA", "NUM TIENDA",
                             "~^#.*TDA", "~NUM.*TIENDA", "~NO.*TIENDA"],
             "TIENDA":      ["Tienda", "TIENDA", "~^TIENDA$", "~NOMBRE.*TIENDA"],
