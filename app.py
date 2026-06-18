@@ -652,8 +652,9 @@ def load_sor(path):
             "PEDIDOS":        ["# PEDIDOS", "PEDIDOS", "NUM PEDIDOS"],
             "FECHA_ENTREGA":  ["PROXIMA ENTREGA", "FECHA ENTREGA", "PROX ENTREGA",
                                "~PROX.*ENTREGA", "~ENTREGA"],
-            "CANTIDAD_PZS":   ["CANTIDAD PROX A LLEGAR", "CANTIDAD PZS",
-                               "CANT PZS", "~CANTIDAD.*LLEGAR"],
+            "CANTIDAD_PZS":   ["CANTIDAD PROX A LLEGAR", "PIEZAS PROX A LLEGAR",
+                               "CANTIDAD PZS", "CANT PZS", "PIEZAS A LLEGAR",
+                               "~CANTIDAD.*LLEGAR", "~PIEZAS.*LLEGAR", "~PROX.*LLEGAR"],
             "INV_CAJAS":      ["INV CAJAS", "INVENTARIO CAJAS", "INVENTARIO",
                                "~INV.*CAJAS"],
             "PROM_SEM_CAJAS": ["PROM SEM CAJAS", "PROM SEMANAL CAJAS",
@@ -669,12 +670,21 @@ def load_sor(path):
         pedidos_col = find_col(df, ["# PEDIDOS", "PEDIDOS"])
         if pedidos_col:
             pedidos_idx = list(df.columns).index(pedidos_col)
-            all_5_cols = df.columns[pedidos_idx-5 : pedidos_idx]   
-            sem_completas = all_5_cols[:-1]                         
-            for c in all_5_cols:
+            # BLINDAJE: buscar columnas sell-out (.1) explícitamente antes de #PEDIDOS
+            # Filtra solo columnas que sean semanas (Sxx...) con sufijo .1 o que sean numéricas de semana
+            _cols_before_pedidos = list(df.columns[:pedidos_idx])
+            _sellout_cols = [c for c in _cols_before_pedidos
+                             if str(c).endswith('.1') and re.match(r'S\d+', str(c), re.IGNORECASE)]
+            if not _sellout_cols:
+                # Fallback: últimas 5 columnas antes de pedidos (comportamiento anterior)
+                all_5_cols = df.columns[pedidos_idx-5 : pedidos_idx]
+                _sellout_cols = list(all_5_cols[:-1])
+            # Excluir la semana en curso (última col .1) — puede estar incompleta
+            sem_completas = _sellout_cols[:-1] if len(_sellout_cols) > 1 else _sellout_cols
+            for c in _sellout_cols:
                 df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0)
-            df["SO_4SEM"] = df[sem_completas[-4:]].sum(axis=1)      
-            df["SO_$"]    = df[sem_completas[-1]]                   
+            df["SO_4SEM"] = df[sem_completas[-4:]].sum(axis=1) if len(sem_completas) >= 4 else df[sem_completas].sum(axis=1)
+            df["SO_$"]    = df[sem_completas[-1]] if sem_completas else 0
         else:
             df["SO_4SEM"] = 0
             df["SO_$"] = 0
@@ -964,8 +974,8 @@ def load_fre(path):
 
         # ── 1. Columnas FIJAS (no cambian entre meses) ─────────────────────────
         FRESKO_COLS_FIJOS = {
-            "?ANIO":       ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
-            "?MES":        ["Mes", "MES", "~^MES$"],
+            "ANIO":        ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
+            "MES":         ["Mes", "MES", "~^MES$"],
             "ESTADO":      ["ESTADO", "Estado", "~^ESTADO$"],
             "COORDINADOR": ["Coordinador Vtas", "Coordinador", "COORDINADOR",
                             "~COORDINAD"],
@@ -973,7 +983,7 @@ def load_fre(path):
                             "~EJECUTIV"],
             "PROMOTOR":    ["Promotor", "PROMOTOR", "~^PROMOTOR$"],
             "FORMATO":     ["FORMATO", "Formato", "~^FORMATO$"],
-            "?ESTATUS":    ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
+            "ESTATUS":     ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
             "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA", "NUM TIENDA",
                             "~^#.*TDA", "~NUM.*TIENDA", "~NO.*TIENDA"],
             "TIENDA":      ["Tienda", "TIENDA", "~^TIENDA$", "~NOMBRE.*TIENDA"],
