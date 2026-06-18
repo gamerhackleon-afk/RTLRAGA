@@ -974,8 +974,8 @@ def load_fre(path):
 
         # ── 1. Columnas FIJAS (no cambian entre meses) ─────────────────────────
         FRESKO_COLS_FIJOS = {
-            "ANIO":        ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
-            "MES":         ["Mes", "MES", "~^MES$"],
+            "?ANIO":       ["Año", "Anio", "AÑO", "ANIO", "~^A[NÑ]O$"],
+            "?MES":        ["Mes", "MES", "~^MES$"],
             "ESTADO":      ["ESTADO", "Estado", "~^ESTADO$"],
             "COORDINADOR": ["Coordinador Vtas", "Coordinador", "COORDINADOR",
                             "~COORDINAD"],
@@ -983,7 +983,7 @@ def load_fre(path):
                             "~EJECUTIV"],
             "PROMOTOR":    ["Promotor", "PROMOTOR", "~^PROMOTOR$"],
             "FORMATO":     ["FORMATO", "Formato", "~^FORMATO$"],
-            "ESTATUS":     ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
+            "?ESTATUS":    ["ESTATUS", "Estatus", "~^ESTATUS$", "~^STATUS$"],
             "NOTIENDA":    ["# Tda", "No Tienda", "NOTIENDA", "NUM TIENDA",
                             "~^#.*TDA", "~NUM.*TIENDA", "~NO.*TIENDA"],
             "TIENDA":      ["Tienda", "TIENDA", "~^TIENDA$", "~NOMBRE.*TIENDA"],
@@ -996,6 +996,11 @@ def load_fre(path):
         df = validate_columns(df, "FRESKO", FRESKO_COLS_FIJOS)
         if df is None:
             return None
+
+        # Garantizar que columnas opcionales ausentes existan vacías
+        for _opt in ["ANIO", "MES", "ESTATUS"]:
+            if _opt not in df.columns:
+                df[_opt] = ""
 
         # ── 2. Columnas DINÁMICAS — detección semántica ────────────────────────
         # Nota: trabajamos sobre el df original para buscarlas, luego las unimos.
